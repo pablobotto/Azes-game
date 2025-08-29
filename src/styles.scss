@@ -1,0 +1,34 @@
+/* You can add global styles to this file, and also import other style files */
+/* Global Style Start */
+:root {
+    /* Font */
+    --primary_font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --secondary_font: Arial, Helvetica, sans-serif;
+    /* Color */
+    --primary_color: #3F3F3F;
+    --secondary_color: #8ca49a;
+    --secondary_color_rga: rgba(140, 164, 154, 0.98);
+}
+h1, h2, h3, h4, h5, h6 {
+    font-family: var(--primary_font);
+    color: rgb(2, 17, 31);
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Contenedor raíz de tu app */
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.pile-slot app-card {
+  top: 0 !important; /* transform se encarga del offset */
+  left: 0;
+}
+/* Global Style End */

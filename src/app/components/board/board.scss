@@ -1,0 +1,185 @@
+//Outside Board Styles
+.start-button {
+  align-self: center;
+  padding: 10px 20px;
+  font-size: 18px;
+  background-color: #4cafef;
+  border: none;
+  border-radius: 8px;
+  color: white;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+.start-button:hover {
+  background-color: #379cd4;
+}
+.header-container {
+  flex: 0 0 auto; /* altura automática según su contenido */
+  background: #f4f4f4;
+  border-bottom: 1px solid #ccc;
+}
+//End Outside Board Styles
+//GameScreen
+.game-screen {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+//Piles
+.opponent-piles,
+.player-piles {
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+}
+
+.pile-slot {
+  width: 80px;
+  height: 110px;
+  border: 2px dashed #ffffff; /* línea punteada */
+  border-radius: 8px;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+}
+
+//End Piles
+//Stairs
+.stairs {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 120px;
+  width: 73%;
+}
+.stair-slot {
+  width: 80px;
+  height: 110px;
+  border: 2px dashed #999;
+  border-radius: 8px;
+  margin-left: 1px;
+  margin-right: 1px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 2.5rem;
+  color: #999;
+  background-color: rgba(255, 255, 255, 0.2);
+  position: relative !important;
+}
+//End Stairs
+//PlayerDecks
+.player-deck {
+  position: relative;
+  left: 120px;
+}
+.player-deck div {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transition: top 0.2s;
+}
+.opponent-deck {
+  position: relative;
+  left: 120px;
+}
+.opponent-deck div {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transition: top 0.2s;
+}
+//End PlayerDecks
+//Header
+.header-container {
+  display: flex;
+  align-items: center;   /* centra verticalmente */
+  justify-content: flex-start; /* todo alineado a la izquierda */
+  gap: 1rem;  /* espacio entre los elementos */
+}
+//End Header
+/* Board Styles */
+.board {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    flex-direction: column;
+    gap: 16px;
+    padding: 10px;
+    min-height: 200px;
+    justify-content: space-between;
+    background-image: url('../../../assets/board-background.jpg');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    flex-direction: column;
+    box-sizing: border-box;
+}
+
+/* Tablero dentro del game-screen */
+.opponent-cards,
+.player-cards {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  min-height: 100px;
+  margin-bottom: 2.75rem;
+}
+.center-area {
+  flex: 1; /* Ocupa el centro */
+  display: flex;
+  align-items: center;
+  gap: 50px;
+  max-height: 125px;
+}
+.deck-area {
+  display: flex;
+  justify-content: flex-end;
+  width: 10%;
+  height: 140px;
+  align-items: center;
+}
+.empty-area {
+  flex: 1; /* Ocupa el espacio restante */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.flying-card {
+  position: fixed;
+  width: 60px;
+  height: 90px;
+  pointer-events: none;
+  transition: transform 0.7s ease-in-out;
+  z-index: 1000;
+  top: 0;
+  left: 0;
+  will-change: transform;
+}
+
+.board {
+  position: relative;
+}
+
+.deck-area {
+  position: relative;
+}
+
+.player-cards {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  min-height: 100px;
+  margin-top: 2.75rem;
+  margin-bottom: 0;
+}
+
+.empty-slot {
+  width: 80px;   /* el mismo ancho que la carta */
+  height: 120px; /* el mismo alto que la carta */
+  visibility: hidden; /* desaparece mientras arrastrás */
+}

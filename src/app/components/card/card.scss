@@ -1,0 +1,54 @@
+.card {
+  position: relative; /* necesario para que las esquinas se posicionen absolutas */
+  width: 60px;
+  height: 90px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: white;
+  font-size: 28px;
+  box-shadow: 2px 2px rgba(255, 255, 255, 0.200);
+  user-select: none;
+}
+
+.face-down {
+  background: url('../../../assets/back-card.png') center/cover no-repeat;
+  border: 1px solid #111;
+  border-radius: 6px;
+  position: relative;
+}
+
+.face-down span,
+.face-down .corner,
+.face-down .center {
+  visibility: hidden; /* oculta el contenido */
+}
+
+.cdk-drag-dragging {
+  opacity: 0; /* o display: none; */
+}
+
+/* Esquinas */
+.corner {
+  position: absolute;
+  font-size: 12px; /* un poco más chico */
+  font-weight: bold;
+}
+.top-left {
+  top: 1px;
+  left: 2px;
+}
+.bottom-right {
+  bottom: 1px;
+  right: 2px;
+  transform: rotate(180deg);
+}
+/* Colores por palo */
+.card.black {
+  color: black;
+}
+.card.red {
+  color: red;
+}

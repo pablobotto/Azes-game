@@ -1,0 +1,13 @@
+<div class="card" [class.face-down]="faceDown || !card.faceUp"      
+[class.black]="card.suit === '♠' || card.suit === '♣'"
+[class.red]="card.suit === '♥' || card.suit === '♦'">
+  <div class="corner top-left">
+    {{ card.value }}{{ card.suit }}
+  </div>
+  <div class="center">
+    {{ card.value }}{{ card.suit }}
+  </div>
+  <div class="corner bottom-right">
+    {{ card.value }}{{ card.suit }}
+  </div>
+</div>

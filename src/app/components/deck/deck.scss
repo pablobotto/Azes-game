@@ -1,0 +1,24 @@
+.deck {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.card.back {
+  width: 60px;
+  height: 90px;
+  background-image: url('../../../assets/back-card.png'); /* ruta según tu proyecto */
+  background-size: cover;
+  background-position: center;
+  border: 2px solid #222;
+  border-radius: 6px;
+  box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.3);
+}
+
+.label {
+  margin-top: 0.5rem;
+  font-size: 14px;
+  color: #ffffff;
+}
