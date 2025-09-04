@@ -37,8 +37,6 @@ export class GameStepService {
         while (hand < 5 ) {
             const card = this.gameService.drawCard();
             if (card) {
-                console.log('neuva carta');
-                console.log(card);
                 await this.gameService.pushCard( this.currentPlayer.getValue() === Player.Player ? GameZone.PlayerHand : GameZone.OpponentHand, card);
             }
             hand++;

@@ -15,15 +15,15 @@ export class GameRulesService {
   constructor() {}
 
   // Devuelve true si la carta puede colocarse en esta escalera
-  canPlaceOnStair(stair: Card[], card: Card): boolean {
+  async canPlaceOnStair(stair: Card[], card: Card): Promise<boolean> {
     if (stair.length === 0) {
       return card.value === 'A'; // Solo A puede iniciar la escalera
     } else {
       const lastCard = stair[stair.length - 1];
-      return this.isNextInSequence(lastCard, card);
+      return await this.isNextInSequence(lastCard, card);
     }
   }
-  private isNextInSequence(prev: Card, next: Card): boolean {
+  private async isNextInSequence(prev: Card, next: Card): Promise<boolean> {
     const prevIndex = this.order.indexOf(prev.value);
     const nextIndex = this.order.indexOf(next.value);
     return nextIndex === prevIndex + 1;

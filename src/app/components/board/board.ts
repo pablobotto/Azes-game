@@ -76,10 +76,10 @@ export class BoardComponent implements AfterViewInit {
       if (event.container.id.startsWith('stair')) {
         // Es una escalera, validamos
         var card: Card = event.previousContainer.data[event.previousIndex];
-        if (this.gameRules.canPlaceOnStair(event.container.data, card)) {
+        if (await this.gameRules.canPlaceOnStair(event.container.data, card)) {
           transferArrayItem(event.previousContainer.data, event.container.data, event.previousIndex, event.currentIndex );
           event.container.data.sort((a, b) => a.numericValue - b.numericValue);
-        } 
+        }
         else{
           console.log('Movimiento no permitido' );}
       } else {
