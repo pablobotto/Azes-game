@@ -12,8 +12,8 @@ export class GameService {
   private suits: ('♠' | '♥' | '♦' | '♣')[] = ['♠', '♥', '♦', '♣'];
   private values = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
   private valueMap: Record<string, number> = { 'A': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13 };
-  //private stairs = new BehaviorSubject<Card[][]>([[], [], [], [], [], [], [], []]);
-  //stairs$ = this.stairs.asObservable();
+  private stairs = new BehaviorSubject<Card[][]>([[], [], [], [], [], [], [], []]);
+  stairs$ = this.stairs.asObservable();
 
 
   deck: Card[] = [];
@@ -22,11 +22,28 @@ export class GameService {
   opponentHand: Card[] = [];
   playerPiles: Card[][] = [[], [], []];
   opponentPiles: Card[][] = [[], [], []];
-  stairs: Card[][] = [[], [], [], [], [], [], [], []]; // zona central donde arrancan las escaleras
+  //stairs: Card[][] = [[], [], [], [], [], [], [], []]; // zona central donde arrancan las escaleras
   playerDeck: Card[] = [];     // las 10 cartas del jugador
   opponentDeck: Card[] = [];   // las 10 cartas del rival
 
   constructor() {}
+
+    // 🔧 get snapshot actual de stairs
+  get getStairs(): Card[][] {
+    return this.stairs.getValue();
+  }
+
+  // 🔧 actualizar stairs
+  setStairs(newValue: Card[][]) {
+    this.stairs.next(newValue);
+  }
+
+  // Ejemplo de agregar una carta
+  addCardToStair(stairIndex: number, card: Card) {
+    const current = this.getStairs.map(s => [...s]); // copia defensiva
+    current[stairIndex].push(card);
+    this.setStairs(current); // 🔔 dispara el next → UI se refresca
+  }
   // Inicia un nuevo juego
   async newGame() {
     this.deck = [];
@@ -34,7 +51,7 @@ export class GameService {
     this.opponentHand = [];
     this.playerPiles = [[], [], []];
     this.opponentPiles = [[], [], []];
-    this.stairs = [[], [], [], [], [], [], [], []];
+    this.stairs.next([[], [], [], [], [], [], [], []]);
     this.table = [];
     this.playerDeck = [];
     this.opponentDeck = [];
@@ -117,7 +134,7 @@ export class GameService {
     if (opponentCard) this.playerDeck.push(opponentCard);
         var opponentCard = this.drawSpecificCard("♥A#B");
     if (opponentCard) this.opponentDeck.push(opponentCard);
-        var opponentCard = this.drawSpecificCard("♣J#B");
+        var opponentCard = this.drawSpecificCard("♣6#B");
     if (opponentCard) this.opponentDeck.push(opponentCard);
   }
   // Roba una carta del mazo

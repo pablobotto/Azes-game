@@ -38,10 +38,10 @@
       </div>
       <!-- Área escaleras-->
       <div class="stairs">
-        <div *ngFor="let stair of game.stairs; let i = index" 
+        <div *ngFor="let stair of (stairs$ | async); let i = index" 
           cdkDropList class="stair-slot" [id]="'stair' + (i + 1)" 
-          [cdkDropListData]="game.stairs[i]" (cdkDropListDropped)="drop($event)">
-            <div *ngFor="let card of game.stairs[i]" style="position: absolute">
+          [cdkDropListData]="stair" (cdkDropListDropped)="drop($event)">
+            <div *ngFor="let card of stair" style="position: absolute">
               <app-card [card]="card"></app-card>
             </div>
         </div>

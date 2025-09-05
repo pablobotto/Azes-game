@@ -20,12 +20,14 @@ import { combineLatest } from 'rxjs';
 export class BoardComponent implements AfterViewInit {
   currentPlayer$: typeof this.gameSteps.currentPlayer$;
   currentStep$: typeof this.gameSteps.currentStep$;
+  stairs$: typeof this.game.stairs$;
   Player = Player;
   GameStep = GameStep;
 
   constructor(public game: GameService, public gameRules: GameRulesService, public gameSteps: GameStepService, private cd: ChangeDetectorRef) {
     this.currentPlayer$ = this.gameSteps.currentPlayer$;
     this.currentStep$ = this.gameSteps.currentStep$;
+    this.stairs$ = this.game.stairs$;
   }
 
   ngAfterViewInit(): void {}
@@ -59,6 +61,10 @@ export class BoardComponent implements AfterViewInit {
         case GameStep.Finished:
           break;
       }
+    });
+    this.game.stairs$.subscribe(async stairs => {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      this.cd.detectChanges();
     });
   }
 
