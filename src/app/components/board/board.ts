@@ -10,6 +10,7 @@ import { GameStepService } from '../../services/gameSteps.service';
 import { Player } from '../../enum/player.enum';
 import { GameStep } from '../../enum/game-step.enum';
 import { combineLatest } from 'rxjs';
+import { SocketService } from '../../services/socket.service';
 
 @Component({
   selector: 'app-board',
@@ -21,16 +22,29 @@ export class BoardComponent implements AfterViewInit {
   currentPlayer$: typeof this.gameSteps.currentPlayer$;
   currentStep$: typeof this.gameSteps.currentStep$;
   stairs$: typeof this.game.stairs$;
+  status$: typeof this.socket.gameStatus$;
   Player = Player;
   GameStep = GameStep;
+  
 
-  constructor(public game: GameService, public gameRules: GameRulesService, public gameSteps: GameStepService, private cd: ChangeDetectorRef) {
+  roomId = 'room1';
+  joined = false;
+  role: string | null = null;
+  gameStarted = false;
+
+  constructor(public socket: SocketService, public game: GameService, public gameRules: GameRulesService, public gameSteps: GameStepService, private cd: ChangeDetectorRef) {
     this.currentPlayer$ = this.gameSteps.currentPlayer$;
     this.currentStep$ = this.gameSteps.currentStep$;
     this.stairs$ = this.game.stairs$;
+    this.status$ = this.socket.gameStatus$;
   }
 
   ngAfterViewInit(): void {}
+
+  async ngOnDestroy() {
+    this.socket.disconnect();
+  }
+
   async ngOnInit() {
     combineLatest([this.gameSteps.currentStep$, this.gameSteps.currentPlayer$
     ]).subscribe(async ([step, player]) => {
@@ -62,10 +76,34 @@ export class BoardComponent implements AfterViewInit {
           break;
       }
     });
+    this.socket.gameStatus$.subscribe(status => {
+      console.log('Estado del juego:', status);
+      this.cd.detectChanges();
+    });
     this.game.stairs$.subscribe(async stairs => {
       await new Promise(resolve => setTimeout(resolve, 1000));
       this.cd.detectChanges();
     });
+    /*this.socket.onJoined().subscribe((data: any) => {
+      this.joined = true;
+      this.role = data.role;
+      this.roomId = data.roomId;
+      console.log('Joined:', data);
+    });
+    this.socket.onStartGame().subscribe((data: any) => {
+      this.gameStarted = true;
+      console.log('Start game', data);
+      // opcional: inicializar estado, pedir estado al servidor, etc.
+    });
+    this.socket.onOpponentPlayed().subscribe(({ card, stairIndex }: { card: Card, stairIndex: number }) => {
+      console.log('Rival jugó', card, 'en', stairIndex);
+      // actualizar estado local con la jugada del rival:
+      this.game.addCardToStair(stairIndex, card);
+    });*/
+  }
+
+  joinRoom() {
+    this.socket.joinRoom(this.roomId);
   }
 
   async startGame() {

@@ -1,15 +1,14 @@
 <!-- Inicial -->
 <div class="header-container">
   <button class="start-button" (click)="startGame()">Iniciar juego</button>
-  <div *ngIf="(currentPlayer$ | async) === Player.Player">
-    <h2>Tu turno</h2>
-  </div>
-  <div *ngIf="(currentPlayer$ | async) === Player.Opponent">
-    <h2>Turno del rival...</h2>
-  </div>
-  <div>
-      <h2>Fase: {{ (currentStep$ | async) }}</h2>
-  </div>
+  <button class="start-button" (click)="joinRoom()">Unirse</button>
+  <div *ngIf="(status$ | async) === 'waiting'"> Esperando rival...</div>
+  <div *ngIf="(status$ | async) === 'ready'"> 🎮 Rival encontrado, empieza la partida</div>
+  <span *ngIf="joined">Rol: {{ role }}</span>
+  <span *ngIf="gameStarted">Juego iniciado</span>
+  <div *ngIf="(currentPlayer$ | async) === Player.Player"><h2>Tu turno</h2></div>
+  <div *ngIf="(currentPlayer$ | async) === Player.Opponent"><h2>Turno del rival...</h2></div>
+  <div><h2>Fase: {{ (currentStep$ | async) }}</h2></div>
 </div>
 <!-- Tablero Principal -->
 <div class="game-screen">
