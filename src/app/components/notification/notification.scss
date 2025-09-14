@@ -1,0 +1,21 @@
+.notification {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #F39C12;
+  color: #000000;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 20px;
+  z-index: 9999;
+  animation: fadein 0.3s, fadeout 0.5s 2.5s;
+  border-color: #000000;
+  border-style: double;
+}
+
+@keyframes fadein {
+  from { opacity: 0; transform: translateX(-50%) translateY(20px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+

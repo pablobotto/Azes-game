@@ -72,14 +72,9 @@ export class GameService {
 
   async removeStairAndReShufle(stairIndex: number) {
     // Tomar el 50% de abajo del mazo actual
-    console.log(`al jugador le falta robar cartas, ${5 - this.playerHand.length} cartas`);
     const cutIndex = Math.floor(this.deck.length / 2);
-    console.log(`Cortando el mazo en ${cutIndex} de ${this.deck.length} cartas.`);
     const bottomHalf = this.deck.slice(cutIndex);
-    console.log(`Bottom half tiene ${bottomHalf.length} cartas.`);
     const topHalf = this.deck.slice(0, cutIndex);
-    console.log(`Top half tiene ${topHalf.length} cartas.`);
-
     // Insertar la escalera mezclada dentro del bottomHalf
     const newBottom = bottomHalf.concat(this.stairs.getValue()[stairIndex])
     const stairs = this.stairs.getValue();

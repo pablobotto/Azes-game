@@ -11,11 +11,12 @@ import { BehaviorSubject } from "rxjs";
 import { GameStep } from "../enum/game-step.enum";
 import { CpuAiService } from "./gameCpu.service";
 import { SocketService } from "./socket.service";
+import { NotificationService } from "./notification.service";
 
 @Injectable({providedIn: 'root'})
 export class GameStepService { 
     currentPlayerId$: typeof this.socketService.currentPlayerId$;
-    constructor(private gameService: GameService, private gameCpu: CpuAiService, private socketService: SocketService) {
+    constructor(private gameService: GameService, private gameCpu: CpuAiService, private socketService: SocketService, private notificationService: NotificationService) {
         this.currentPlayerId$ = this.socketService.currentPlayerId$;
     }
 
@@ -36,14 +37,12 @@ export class GameStepService {
     }
     async draw(playerType: CurrentPlayerType, player: string = "non-multiplayer") {
         await new Promise(resolve => setTimeout(resolve, 650));
-        console.log(`obteniendo cartas para ${playerType}`);
-        if (this.currentPlayerType.getValue() !== playerType) { console.warn("No es tu turno;"); return; }
-        if (this.currentStep.getValue() !== GameStep.Drawing) { console.warn(`No es el paso de robar cartas`); return;}
-        if (player !== "non-multiplayer" && this.currentPlayerId$.getValue() !== player) { console.warn("No es tu turno;"); return; }
+        if (this.currentPlayerType.getValue() !== playerType) { this.notificationService.show("⚠ No es tu Turno"); return; }
+        if (this.currentStep.getValue() !== GameStep.Drawing) { this.notificationService.show(`⚠ Paso incorrecto.`); return;}
+        if (player !== "non-multiplayer" && this.currentPlayerId$.getValue() !== player) { this.notificationService.show("⚠ No es tu Turno"); return; }
         var hand = this.currentPlayerType.getValue() === CurrentPlayerType.Player ? this.gameService.getHandPlCount() : this.gameService.getHandOpCount();
         for (const [i, stair] of this.gameService.getStairs.entries()) {
             if (stair.length === 13 && stair[stair.length - 1].value === 'K') {
-                console.log("Escalera completa, se devuelve al mazo");
                 await this.gameService.removeStairAndReShufle(i);
                 await this.socketService.updateReShufle();
                 await new Promise(resolve => setTimeout(resolve, 100));
@@ -64,9 +63,9 @@ export class GameStepService {
         this.currentStep.next(GameStep.Playing);
     }
     async play(playerType: CurrentPlayerType, player: string = "non-multiplayer"): Promise<boolean> {
-        if (this.currentPlayerType.getValue() !== playerType) { console.warn("No es tu turno;"); return false; }
-        if (player !== "non-multiplayer" && this.currentPlayerId$.getValue() !== player) { console.warn("No es tu turno;"); return false; }
-        if (this.currentStep.getValue() !== GameStep.Playing) {console.warn(`No es el paso de jugar cartas. Paso actual: ${this.currentStep.getValue()}`); return false;}
+        if (this.currentPlayerType.getValue() !== playerType) { this.notificationService.show("⚠ No es tu Turno"); return false; }
+        if (player !== "non-multiplayer" && this.currentPlayerId$.getValue() !== player) { this.notificationService.show("⚠ No es tu Turno"); return false; }
+        if (this.currentStep.getValue() !== GameStep.Playing) {this.notificationService.show(`⚠ Paso incorrecto.`); return false;}
         if (playerType === CurrentPlayerType.Cpu) {
             await this.gameCpu.play();
             this.currentStep.next(GameStep.Discarding);
@@ -74,12 +73,12 @@ export class GameStepService {
         return true;
     }
     async discard(playerType: CurrentPlayerType, player: string = "non-multiplayer"): Promise<boolean> {
-        if (this.currentPlayerType.getValue() !== playerType) { console.warn("No es tu turno;"); return false; }
+        if (this.currentPlayerType.getValue() !== playerType) { this.notificationService.show("⚠ No es tu Turno"); return false; }
         if (!(this.currentStep.getValue() === GameStep.Discarding || (this.currentStep.getValue() === GameStep.Playing && playerType === CurrentPlayerType.Player))) {
-            console.warn(`No es el paso de descartar cartas. Paso actual: ${this.currentStep.getValue()}`);
+            this.notificationService.show(`⚠ Paso incorrecto.`);
             return false;
         }
-        if (player !== "non-multiplayer" && this.currentPlayerId$.getValue() !== player) { console.warn("No es tu turno;"); return false; }
+        if (player !== "non-multiplayer" && this.currentPlayerId$.getValue() !== player) { this.notificationService.show("⚠ No es tu Turno"); return false; }
         if (playerType === CurrentPlayerType.Cpu) {
             await this.gameCpu.discard();
         }
@@ -87,11 +86,8 @@ export class GameStepService {
         return true;
     }
     async endTurn(player: string) {
-        if (this.currentStep.getValue() !== GameStep.Ending) {
-            console.warn(`No es el paso de finalizar turno. Paso actual: ${this.currentStep.getValue()}`);
-            return;
-        }
-        if (player !== "non-multiplayer" && this.currentPlayerId$.getValue() !== player) { console.warn("No es tu turno;"); return;}
+        if (this.currentStep.getValue() !== GameStep.Ending) { this.notificationService.show(`⚠ Paso incorrecto.`); return;}
+        if (player !== "non-multiplayer" && this.currentPlayerId$.getValue() !== player) { this.notificationService.show("⚠ No es tu Turno"); return;}
         this.currentStep.next(GameStep.Finished);
         if (player === "non-multiplayer") {
             const nextPlayer = this.currentPlayerType.getValue() === CurrentPlayerType.Player ? CurrentPlayerType.Cpu : CurrentPlayerType.Player;

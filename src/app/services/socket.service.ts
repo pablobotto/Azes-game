@@ -27,7 +27,6 @@ export class SocketService {
       this.gameStatus.next("waiting");
     });
     this.socket.on("ready", (data) => {
-      console.log("Juego listo:", data.gameState.roomId);
       this.room$.next(data.gameState.roomId);
       this.gameStatus.next("ready");
       this.currentPlayerId$.next(data.gameState.currentPlayerId);
@@ -73,8 +72,7 @@ export class SocketService {
     this.socket.emit('displayOpponentName', this.room$.getValue(), playerName);
   }
   private updateGameState(gameState: any) {
-    console.log('Game state:', gameState);
-
+    //console.log('Game state:', gameState);
     this.gameServerData = gameState;
     this.gameService.deck = gameState.deck;
     this.gameService.setStairs(gameState.stairs);
