@@ -3,7 +3,7 @@ import { GameService } from './game.service';
 import { GameRulesService } from './gameRules.service';
 import { Card } from '../models/card.model';
 import { GameZone } from '../enum/game-zone.enum';
-import { Player } from '../enum/player.enum';
+import { CurrentPlayerType } from '../enum/player.enum';
 import { DiscardPoints } from '../models/discardPoints.model';
 
 export interface CpuMove {
@@ -22,7 +22,7 @@ export class CpuAiService {
         if (!ownDeckTop) return null;
 
         const hand = this.gameService.opponentHand;
-        const stairs = this.gameService.getStairs;
+        //const stairs = this.gameService.getStairs;
         var topValues: number[] = [0,0,0,0,0,0,0,0];
 
         // 1. Si puede bajar la carta del deck directamente

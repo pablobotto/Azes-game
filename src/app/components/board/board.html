@@ -1,21 +1,24 @@
 <!-- Inicial -->
 <div class="header-container">
-  <button class="start-button" (click)="startGame()">Iniciar juego</button>
-  <button class="start-button" (click)="joinRoom()">Unirse</button>
+  <input class="name-input" type="text" placeholder="Escribí tu nombre" [(ngModel)]="playerName" [disabled]="joined">
+  <button class="start-button" (click)="startNewSPGame()" [disabled]="!isNameValid()">Vs CPU</button>
+  <button class="start-button" (click)="joinRoom()" [disabled]="!isNameValid()">Unirse</button>
   <div *ngIf="(status$ | async) === 'waiting'"> Esperando rival...</div>
-  <div *ngIf="(status$ | async) === 'ready'"> 🎮 Rival encontrado, empieza la partida</div>
-  <span *ngIf="joined">Rol: {{ role }}</span>
-  <span *ngIf="gameStarted">Juego iniciado</span>
-  <div *ngIf="(currentPlayer$ | async) === Player.Player"><h2>Tu turno</h2></div>
-  <div *ngIf="(currentPlayer$ | async) === Player.Opponent"><h2>Turno del rival...</h2></div>
-  <div><h2>Fase: {{ (currentStep$ | async) }}</h2></div>
+  <div *ngIf="(status$ | async) === 'ready'">
+    <h2 *ngIf="(currentPlayerId$ | async) === socketService.socketId" class="pill pill-green">
+      {{ (currentStep$ | async) }}: {{ playerName }}
+    </h2>
+    <h2 *ngIf="(currentPlayerId$ | async) !== socketService.socketId" class="pill pill-red">
+      Turno de {{opponentName$ | async}}
+    </h2>
+  </div>
 </div>
 <!-- Tablero Principal -->
 <div class="game-screen">
   <div class="board">  
       <!-- Aquí mostrarás las 5 cartas del rival -->
     <div class="opponent-cards">
-       <app-card *ngFor="let card of game.opponentHand" [card]="card" [faceDown]="false"></app-card>
+       <app-card *ngFor="let card of game.opponentHand" [card]="card" [faceDown]="true"></app-card>
         <div class="opponent-deck">
           <div *ngFor="let card of game.opponentDeck; let isLast = last">
             <app-card [card]="card" [faceDown]="!isLast"></app-card>

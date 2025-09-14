@@ -13,11 +13,52 @@
 .start-button:hover {
   background-color: #379cd4;
 }
+.start-button:disabled {
+  opacity: 0.5;       /* se ve más claro */
+  cursor: not-allowed; /* cambia el cursor */
+  background-color: #a0a0a0; /* opcional, gris */
+}
 .header-container {
   flex: 0 0 auto; /* altura automática según su contenido */
   background: #f4f4f4;
   border-bottom: 1px solid #ccc;
 }
+
+.name-input {
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: none;
+  outline: none;
+  font-size: 16px;
+  max-width: 100px;
+  margin-left: 5px;
+  margin-block-start: 0.83em;
+  margin-block-end: 0.83em;
+}
+
+.name-input::placeholder {
+  color: #aaa;
+}
+
+.pill {
+  display: inline-block;
+  padding: 6px 14px;
+  background-color: #4caf50;   /* verde */
+  color: white;
+  border-radius: 9999px;       /* bordes súper redondeados */
+  font-weight: 500;
+  font-size: 16px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.pill-green {
+  background-color: #4caf50;
+}
+
+.pill-red {
+  background-color: #f44336;
+}
+
 //End Outside Board Styles
 //GameScreen
 .game-screen {

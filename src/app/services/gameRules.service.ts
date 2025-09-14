@@ -23,6 +23,19 @@ export class GameRulesService {
       return await this.isNextInSequence(lastCard, card);
     }
   }
+  async canDiscardToPile(hand: Card[]): Promise<boolean> {
+    if (hand.some(card => card.value === "A")) {
+      return false;
+    }
+    return true;
+  }
+  async canGetMoreCardsInTheCurrentTurn(hand: Card[]): Promise<boolean> {
+    if (hand.length === 0) {
+      return true;
+    }
+    return false;
+  }
+  
   private async isNextInSequence(prev: Card, next: Card): Promise<boolean> {
     const prevIndex = this.order.indexOf(prev.value);
     const nextIndex = this.order.indexOf(next.value);

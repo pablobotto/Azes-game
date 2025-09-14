@@ -11,9 +11,9 @@ export class GameService {
   private suits: ('♠' | '♥' | '♦' | '♣')[] = ['♠', '♥', '♦', '♣'];
   private values = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
   private valueMap: Record<string, number> = { 'A': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13 };
-  private stairs = new BehaviorSubject<Card[][]>([[], [], [], [], [], [], [], []]);   //stairs: Card[][] = [[], [], [], [], [], [], [], []];
-  private decks = ["A", "B"];
+  private stairs = new BehaviorSubject<Card[][]>([[], [], [], [], [], [], [], []]);
   stairs$ = this.stairs.asObservable();
+  private decks = ["A", "B"];
 
   deck: Card[] = [];
   playerHand: Card[] = [];
@@ -68,6 +68,26 @@ export class GameService {
   // Mezcla el mazo
   async shuffle() {
     this.deck.sort(() => Math.random() - 0.5);
+  }
+
+  async removeStairAndReShufle(stairIndex: number) {
+    // Tomar el 50% de abajo del mazo actual
+    console.log(`al jugador le falta robar cartas, ${5 - this.playerHand.length} cartas`);
+    const cutIndex = Math.floor(this.deck.length / 2);
+    console.log(`Cortando el mazo en ${cutIndex} de ${this.deck.length} cartas.`);
+    const bottomHalf = this.deck.slice(cutIndex);
+    console.log(`Bottom half tiene ${bottomHalf.length} cartas.`);
+    const topHalf = this.deck.slice(0, cutIndex);
+    console.log(`Top half tiene ${topHalf.length} cartas.`);
+
+    // Insertar la escalera mezclada dentro del bottomHalf
+    const newBottom = bottomHalf.concat(this.stairs.getValue()[stairIndex])
+    const stairs = this.stairs.getValue();
+    const updatedStairs = [...stairs]; 
+    updatedStairs[stairIndex] = []; 
+    this.stairs.next(updatedStairs);
+    // Reconstruir el mazo
+    this.deck = topHalf.concat(newBottom);
   }
   // Reparte cartas iniciales
   async dealInitialHands(initialPlayerHand = 5, initialPlayerDeck = 10) {

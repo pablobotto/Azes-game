@@ -1,74 +1,91 @@
 import { Injectable } from '@angular/core';
 import { io, Socket } from 'socket.io-client';
-import { BehaviorSubject, Observable } from 'rxjs';
+import { BehaviorSubject, Observable, Subject } from 'rxjs';
 import { GameService } from './game.service';
 
 @Injectable({ providedIn: 'root' })
 export class SocketService {
   private socket: Socket;
-  public gameStatus$ = new BehaviorSubject<string>("idle"); // idle | waiting | ready | full
-  public socketId!: String;
-  
+  public socketId: string = "non-multiplayer";
+  private gameServerData: any
+
+  startTurn$ = new Subject<void>();
+
+  public currentPlayerId$ = new BehaviorSubject<string>("non-multiplayer");
+  public opponentName$ = new BehaviorSubject<string>("Oponente");
+  public room$ = new BehaviorSubject<string>("");
+
+  private gameStatus = new BehaviorSubject<string>("idle"); // idle | waiting | ready | full
+  gameStatus$ = this.gameStatus.asObservable();
+
   constructor(private gameService: GameService, ) {
     this.socket = io('http://localhost:3000');
     this.socket.on("identification", (data) => {
       this.socketId = data.socketId;
     });
     this.socket.on("waiting", (data) => {
-      this.gameStatus$.next("waiting");
+      this.gameStatus.next("waiting");
     });
     this.socket.on("ready", (data) => {
-      this.gameStatus$.next("ready");
-      console.log('Game ready:', data);
-      this.gameService.deck = data.gameState.deck;
-      this.gameService.playerDeck = data.gameState.playerDecks[this.socketId as string];
-      this.gameService.setStairs(data.gameState.stairs);
-      this.gameService.playerHand = data.gameState.playerHands[this.socketId as string];
-      const opponentId = Object.keys(data.gameState.playerHands).find(id => id !== this.socketId);
-      console.log('Opponent ID:', opponentId);
-      this.gameService.opponentHand = data.gameState.playerHands[opponentId as string];
-      this.gameService.opponentDeck = data.gameState.playerDecks[opponentId as string]
-
+      console.log("Juego listo:", data.gameState.roomId);
+      this.room$.next(data.gameState.roomId);
+      this.gameStatus.next("ready");
+      this.currentPlayerId$.next(data.gameState.currentPlayerId);
+      this.updateGameState(data.gameState);
+    });
+    this.socket.on("opponentPlayed", (data) => {
+      this.updateGameState(data.gameState);
+    });
+    this.socket.on("displayOpponentName", (data) => {
+      this.opponentName$.next(data.opponentName);
+    });
+    this.socket.on("newCurrentPlayer", (data) => {
+      this.currentPlayerId$.next(data.newCurrentPlayer);
+      this.gameServerData.currentPlayerId = data.newCurrentPlayer;
+      this.startTurn$.next();
     });
     this.socket.on("full", () => {
-      this.gameStatus$.next("full");
+      this.gameStatus.next("full");
     });
   }
 
   async joinRoom(roomId: string) {
     this.socket.emit('joinRoom', roomId);
   }
-
-  async playCard(roomId: string, card: any, stairIndex: number) {
-    this.socket.emit('playCard', { roomId, card, stairIndex });
+  async playCard() {
+    this.socket.emit('playCard', this.gameServerData);
   }
-
+  async changePlayersOnline() {
+    const opponentId = Object.keys(this.gameServerData.playerHands).find(id => id !== this.socketId);
+    this.currentPlayerId$.next(opponentId as string);
+    this.gameServerData.currentPlayerId = opponentId as string;
+    this.socket.emit('changePlayers', this.gameServerData.roomId, opponentId);
+  }
   async disconnect() {
     this.socket.disconnect();
   }
-
-  onJoined(): Observable<any> {
-    return new Observable(sub => {
-      this.socket.on('joined', (data) => sub.next(data));
-    });
+  async updateReShufle() {
+    this.gameServerData.deck = this.gameService.deck;
+    this.gameServerData.stairs = this.gameService.getStairs;
+    this.socket.emit('playCard', this.gameServerData);
   }
-
-  onStartGame(): Observable<any> {
-    return new Observable(sub => {
-      this.socket.on('startGame', (data) => sub.next(data));
-    });
+  async sendDisplayOpponentName(playerName: string) {
+    this.socket.emit('displayOpponentName', this.room$.getValue(), playerName);
   }
+  private updateGameState(gameState: any) {
+    console.log('Game state:', gameState);
 
-  onOpponentPlayed(): Observable<any> {
-    return new Observable(sub => {
-      this.socket.on('opponentPlayed', (data) => sub.next(data));
-    });
-  }
+    this.gameServerData = gameState;
+    this.gameService.deck = gameState.deck;
+    this.gameService.setStairs(gameState.stairs);
 
-  onRoomFull(): Observable<void> {
-    return new Observable(sub => {
-      this.socket.on('roomFull', () => sub.next());
-    });
+    this.gameService.playerDeck = gameState.playerDecks[this.socketId as string];
+    this.gameService.playerHand = gameState.playerHands[this.socketId as string];
+    this.gameService.playerPiles = gameState.playerPiles[this.socketId as string];
+
+    const opponentId = Object.keys(gameState.playerHands).find(id => id !== this.socketId);
+    this.gameService.opponentHand = gameState.playerHands[opponentId as string];
+    this.gameService.opponentDeck = gameState.playerDecks[opponentId as string];
+    this.gameService.opponentPiles = gameState.playerPiles[opponentId as string];
   }
-  
 }
