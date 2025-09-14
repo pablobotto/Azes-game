@@ -1,8 +1,8 @@
 export enum GameStep {
-    Initializing = 'Initializing game',
-    Drawing = 'Drawing a card',
-    Playing = 'Playing...',
-    Discarding = 'Discarding...',
-    Ending = 'Ending turn',
-    Finished = 'Changing Turns'
+    Initializing = '',
+    Drawing = 'Robando',
+    Playing = 'Jugando',
+    Discarding = 'Descartando',
+    Ending = 'Finalizando Turno',
+    Finished = 'Turno Finalizado'
 }

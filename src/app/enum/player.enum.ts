@@ -1,4 +1,4 @@
-export enum Player {
+export enum CurrentPlayerType {
   Player = 'Jugador',
-  Opponent = 'CPU',
+  Cpu = 'CPU',
 }

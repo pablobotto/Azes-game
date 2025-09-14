@@ -6,72 +6,97 @@
 import { Injectable } from "@angular/core";
 import { GameService } from "./game.service";
 import { GameZone } from "../enum/game-zone.enum";
-import { Player } from "../enum/player.enum";
+import { CurrentPlayerType } from "../enum/player.enum";
 import { BehaviorSubject } from "rxjs";
 import { GameStep } from "../enum/game-step.enum";
 import { CpuAiService } from "./gameCpu.service";
+import { SocketService } from "./socket.service";
 
 @Injectable({providedIn: 'root'})
 export class GameStepService { 
-    constructor(private gameService: GameService, private gameCpu: CpuAiService) {}
+    currentPlayerId$: typeof this.socketService.currentPlayerId$;
+    constructor(private gameService: GameService, private gameCpu: CpuAiService, private socketService: SocketService) {
+        this.currentPlayerId$ = this.socketService.currentPlayerId$;
+    }
 
     //OBSERVABLE PARA EL TURNO ACTUAL
-    private currentPlayer = new BehaviorSubject<Player>(Player.Player);
-    currentPlayer$ = this.currentPlayer.asObservable();
+    private currentPlayerType = new BehaviorSubject<CurrentPlayerType>(CurrentPlayerType.Player);
+    currentPlayerType$ = this.currentPlayerType.asObservable();
 
     //OBSERVABLE PARA EL PASO DEL TURNO
     private currentStep = new BehaviorSubject<GameStep>(GameStep.Initializing);
     currentStep$ = this.currentStep.asObservable();
 
+    async setStep(step: GameStep) {
+        this.currentStep.next(step);
+    }
     async resetGame() {
-        this.currentPlayer.next(Player.Player);
+        this.currentPlayerType.next(CurrentPlayerType.Player);
         this.currentStep.next(GameStep.Playing);
     }
-    async draw(player: Player) {
-        if (this.currentPlayer.getValue() !== player) { console.warn("No es tu turno;"); return; }
-        if (this.currentStep.getValue() !== GameStep.Drawing) { console.warn(`No es el paso de robar cartas. Paso actual: ${this.currentStep}`);
-            return;
+    async draw(playerType: CurrentPlayerType, player: string = "non-multiplayer") {
+        await new Promise(resolve => setTimeout(resolve, 650));
+        console.log(`obteniendo cartas para ${playerType}`);
+        if (this.currentPlayerType.getValue() !== playerType) { console.warn("No es tu turno;"); return; }
+        if (this.currentStep.getValue() !== GameStep.Drawing) { console.warn(`No es el paso de robar cartas`); return;}
+        if (player !== "non-multiplayer" && this.currentPlayerId$.getValue() !== player) { console.warn("No es tu turno;"); return; }
+        var hand = this.currentPlayerType.getValue() === CurrentPlayerType.Player ? this.gameService.getHandPlCount() : this.gameService.getHandOpCount();
+        for (const [i, stair] of this.gameService.getStairs.entries()) {
+            if (stair.length === 13 && stair[stair.length - 1].value === 'K') {
+                console.log("Escalera completa, se devuelve al mazo");
+                await this.gameService.removeStairAndReShufle(i);
+                await this.socketService.updateReShufle();
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
         }
-        var hand = this.currentPlayer.getValue() === Player.Player ? this.gameService.getHandPlCount() : this.gameService.getHandOpCount();
         // Roba hasta tener 5 cartas en mano
         while (hand < 5 ) {
             const card = this.gameService.drawCard();
             if (card) {
-                await this.gameService.pushCard( this.currentPlayer.getValue() === Player.Player ? GameZone.PlayerHand : GameZone.OpponentHand, card);
+                await this.gameService.pushCard( this.currentPlayerType.getValue() === CurrentPlayerType.Player ? GameZone.PlayerHand : GameZone.OpponentHand, card);
+            }
+            if (player !== "non-multiplayer"){
+                await new Promise(resolve => setTimeout(resolve, 150))
+                await this.socketService.playCard();
             }
             hand++;
         }
         this.currentStep.next(GameStep.Playing);
     }
-    async play(player: Player) {
-        if (this.currentPlayer.getValue() !== player) { console.warn("No es tu turno;"); return false; }
-        if (this.currentStep.getValue() !== GameStep.Playing) {console.warn(`No es el paso de jugar cartas. Paso actual: ${this.currentStep.getValue()}`); return;}
-        if (player === Player.Opponent) {
+    async play(playerType: CurrentPlayerType, player: string = "non-multiplayer"): Promise<boolean> {
+        if (this.currentPlayerType.getValue() !== playerType) { console.warn("No es tu turno;"); return false; }
+        if (player !== "non-multiplayer" && this.currentPlayerId$.getValue() !== player) { console.warn("No es tu turno;"); return false; }
+        if (this.currentStep.getValue() !== GameStep.Playing) {console.warn(`No es el paso de jugar cartas. Paso actual: ${this.currentStep.getValue()}`); return false;}
+        if (playerType === CurrentPlayerType.Cpu) {
             await this.gameCpu.play();
+            this.currentStep.next(GameStep.Discarding);
         }
-        this.currentStep.next(GameStep.Discarding);
-        return;
+        return true;
     }
-    async discard(player: Player): Promise<boolean> {
-        if (this.currentPlayer.getValue() !== player) { console.warn("No es tu turno;"); return false; }
-        if (!(this.currentStep.getValue() === GameStep.Discarding || (this.currentStep.getValue() === GameStep.Playing && player === Player.Player))) {
+    async discard(playerType: CurrentPlayerType, player: string = "non-multiplayer"): Promise<boolean> {
+        if (this.currentPlayerType.getValue() !== playerType) { console.warn("No es tu turno;"); return false; }
+        if (!(this.currentStep.getValue() === GameStep.Discarding || (this.currentStep.getValue() === GameStep.Playing && playerType === CurrentPlayerType.Player))) {
             console.warn(`No es el paso de descartar cartas. Paso actual: ${this.currentStep.getValue()}`);
             return false;
         }
-        if (player === Player.Opponent) {
+        if (player !== "non-multiplayer" && this.currentPlayerId$.getValue() !== player) { console.warn("No es tu turno;"); return false; }
+        if (playerType === CurrentPlayerType.Cpu) {
             await this.gameCpu.discard();
         }
         this.currentStep.next(GameStep.Ending);
         return true;
     }
-    async endTurn() {
+    async endTurn(player: string) {
         if (this.currentStep.getValue() !== GameStep.Ending) {
             console.warn(`No es el paso de finalizar turno. Paso actual: ${this.currentStep.getValue()}`);
             return;
         }
+        if (player !== "non-multiplayer" && this.currentPlayerId$.getValue() !== player) { console.warn("No es tu turno;"); return;}
         this.currentStep.next(GameStep.Finished);
-        const nextPlayer = this.currentPlayer.getValue() === Player.Player ? Player.Opponent : Player.Player;
-        this.currentPlayer.next(nextPlayer);
-        this.currentStep.next(GameStep.Drawing);
+        if (player === "non-multiplayer") {
+            const nextPlayer = this.currentPlayerType.getValue() === CurrentPlayerType.Player ? CurrentPlayerType.Cpu : CurrentPlayerType.Player;
+            this.currentPlayerType.next(nextPlayer);
+            this.currentStep.next(GameStep.Drawing);
+        }
     }
 }

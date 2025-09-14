@@ -2,7 +2,7 @@ import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { GameService } from '../../services/game.service';
 import { GameStepService } from '../../services/gameSteps.service';
-import { Player } from '../../enum/player.enum';
+import { CurrentPlayerType } from '../../enum/player.enum';
 
 @Component({
   selector: 'app-deck',
@@ -13,9 +13,9 @@ import { Player } from '../../enum/player.enum';
 })
 export class DeckComponent {
   constructor(public game: GameService, public gameSteps: GameStepService) {}
-  Player = Player;
+  Player = CurrentPlayerType;
 
-  newCard(player: Player) {
+  newCard(player: CurrentPlayerType) {
     this.gameSteps.draw(player);
   }
 

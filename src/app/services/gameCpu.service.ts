@@ -3,7 +3,7 @@ import { GameService } from './game.service';
 import { GameRulesService } from './gameRules.service';
 import { Card } from '../models/card.model';
 import { GameZone } from '../enum/game-zone.enum';
-import { Player } from '../enum/player.enum';
+import { CurrentPlayerType } from '../enum/player.enum';
 import { DiscardPoints } from '../models/discardPoints.model';
 
 export interface CpuMove {
@@ -22,12 +22,13 @@ export class CpuAiService {
         if (!ownDeckTop) return null;
 
         const hand = this.gameService.opponentHand;
+        //const stairs = this.gameService.getStairs;
         var topValues: number[] = [0,0,0,0,0,0,0,0];
 
         // 1. Si puede bajar la carta del deck directamente
         var repitedValues: string[] = [];
         await new Promise(resolve => setTimeout(resolve, 1000)); // pausa 1s
-        for (const [i, stair] of this.gameService.stairs.entries()) {
+        for (const [i, stair] of this.gameService.getStairs.entries()) {
             const stairTop = this.peekLast(stair);
             topValues[i] = !stairTop ? 0 : stairTop.numericValue;
             if (repitedValues.includes(!stairTop ? '0' : stairTop.value)) {
@@ -36,7 +37,8 @@ export class CpuAiService {
             repitedValues.push(!stairTop ? '0' : stairTop.value);
             if (await this.rulesService.canPlaceOnStair(stair, ownDeckTop)) {
                 this.gameService.opponentDeck.pop();
-                this.gameService.stairs[i].push(ownDeckTop);
+                //this.gameService.stairs[i].push(ownDeckTop);
+                this.gameService.addCardToStair(i, ownDeckTop);
                 await this.play();
                 return;
             }
@@ -59,7 +61,7 @@ export class CpuAiService {
         await new Promise(resolve => setTimeout(resolve, 1000));
         // 3. Intentar liberar pilas (usar carta superior de pila)
         repitedValues = [];
-        for (const [i, stair] of this.gameService.stairs.entries()) {
+        for (const [i, stair] of this.gameService.getStairs.entries()) {
             if (topValues[i] >= ownDeckTop.numericValue) { continue; }
             const stairTop = this.peekLast(stair);
             if (repitedValues.includes(!stairTop ? '0' : stairTop.value)) { continue;}
@@ -73,13 +75,13 @@ export class CpuAiService {
         // 4. Jugar cartas de la mano o bloquear (si conviene)
         const playerDeckTop = this.peekLast(this.gameService.playerDeck);
         if (!playerDeckTop) return null;
-        for (const [i, stair] of this.gameService.stairs.entries()) {
+        for (const [i, stair] of this.gameService.getStairs.entries()) {
             await this.tryToRetrieveMoreCardsNextTurn(playerDeckTop.numericValue, i);
         }
 
         //5. intentar bloquear siempre    
         repitedValues = [];
-        for (const [i, stair] of this.gameService.stairs.entries()) {
+        for (const [i, stair] of this.gameService.getStairs.entries()) {
             if (topValues[i] >= playerDeckTop.numericValue) { continue; }
             const stairTop = this.peekLast(stair);
             if (repitedValues.includes(!stairTop ? '0' : stairTop.value)) { continue;}
@@ -141,7 +143,7 @@ export class CpuAiService {
     }
     private async tryToRetrieveMoreCardsNextTurn(playerCardValue: number, stair: number){
         for (const [j, card] of this.gameService.opponentHand.entries()) {
-            if (await this.rulesService.canPlaceOnStair(this.gameService.stairs[stair], card)) {
+            if (await this.rulesService.canPlaceOnStair(this.gameService.getStairs[stair], card)) {
                 var dangerPoints = playerCardValue - card.numericValue
                 if(dangerPoints > 2 || dangerPoints < 1){
                     this.ngZone.run(() => {
@@ -149,7 +151,7 @@ export class CpuAiService {
                     });
                     await this.delay(200);
                     this.ngZone.run(() => {
-                        this.gameService.stairs[stair].push(card);  
+                        this.gameService.addCardToStair(stair, card);  
                     });                        
 
                     console.log("no es pelogroso voy a jugar", card);
