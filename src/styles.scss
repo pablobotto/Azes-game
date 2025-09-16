@@ -34,17 +34,10 @@ html, body {
   margin: 0;
   padding: 0;
 }
-
-/* Contenedor raíz de tu app */
-:host {
+app-root, app-board, .game-screen {
+  height: 100%;
   display: flex;
   flex-direction: column;
-  height: 100%;
-}
-
-.pile-slot app-card {
-  top: 0 !important; /* transform se encarga del offset */
-  left: 0;
 }
 
 /* Global Style End */

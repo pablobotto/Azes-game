@@ -7,7 +7,7 @@ import { Injectable } from "@angular/core";
 import { GameService } from "./game.service";
 import { GameZone } from "../enum/game-zone.enum";
 import { CurrentPlayerType } from "../enum/player.enum";
-import { BehaviorSubject } from "rxjs";
+import { BehaviorSubject, Subject } from "rxjs";
 import { GameStep } from "../enum/game-step.enum";
 import { CpuAiService } from "./gameCpu.service";
 import { SocketService } from "./socket.service";
@@ -15,6 +15,7 @@ import { NotificationService } from "./notification.service";
 
 @Injectable({providedIn: 'root'})
 export class GameStepService { 
+    tie$ = new Subject<void>();
     currentPlayerId$: typeof this.socketService.currentPlayerId$;
     constructor(private gameService: GameService, private gameCpu: CpuAiService, private socketService: SocketService, private notificationService: NotificationService) {
         this.currentPlayerId$ = this.socketService.currentPlayerId$;
@@ -23,7 +24,6 @@ export class GameStepService {
     //OBSERVABLE PARA EL TURNO ACTUAL
     private currentPlayerType = new BehaviorSubject<CurrentPlayerType>(CurrentPlayerType.Player);
     currentPlayerType$ = this.currentPlayerType.asObservable();
-
     //OBSERVABLE PARA EL PASO DEL TURNO
     private currentStep = new BehaviorSubject<GameStep>(GameStep.Initializing);
     currentStep$ = this.currentStep.asObservable();
@@ -34,6 +34,10 @@ export class GameStepService {
     async resetGame() {
         this.currentPlayerType.next(CurrentPlayerType.Player);
         this.currentStep.next(GameStep.Playing);
+    }
+    async resetValues() {
+        this.currentPlayerType.next(CurrentPlayerType.Player);
+        this.currentStep.next(GameStep.Initializing);
     }
     async draw(playerType: CurrentPlayerType, player: string = "non-multiplayer") {
         await new Promise(resolve => setTimeout(resolve, 650));
@@ -53,6 +57,10 @@ export class GameStepService {
             const card = this.gameService.drawCard();
             if (card) {
                 await this.gameService.pushCard( this.currentPlayerType.getValue() === CurrentPlayerType.Player ? GameZone.PlayerHand : GameZone.OpponentHand, card);
+            }
+            else {
+                this.tie$.next();
+                return;
             }
             if (player !== "non-multiplayer"){
                 await new Promise(resolve => setTimeout(resolve, 150))

@@ -70,6 +70,19 @@ io.on("connection", (socket) => {
     });
   });
 
+  socket.on("win", ( roomId: string ) => {
+    console.log(`Win recibido en ${roomId} por ${socket.id}`);
+    enqueue(roomId, async () => {
+      socket.to(roomId).emit("lose");
+    });
+  });
+  socket.on("tie", ( roomId: string ) => {
+    console.log(`Tie recibido en ${roomId} por ${socket.id}`);
+    enqueue(roomId, async () => {
+      socket.to(roomId).emit("tie");
+    });
+  });
+
   socket.on("disconnect", () => {
     console.log("Cliente desconectado:", socket.id);
     // limpiar de rooms
@@ -87,6 +100,22 @@ io.on("connection", (socket) => {
       }
     }
   });
+
+  socket.on("leaveRoom", (roomId) => {
+    if (!rooms[roomId]) return;
+    const idx = rooms[roomId].indexOf(socket.id);
+    if (idx !== -1) {
+      rooms[roomId].splice(idx, 1);
+      console.log(`Removido ${socket.id} de ${roomId}. Quedan:`, rooms[roomId]);
+      if (rooms[roomId].length === 0) {
+        delete rooms[roomId];
+      } else {
+        socket.to(roomId).emit("opponentLeft", { roomId });
+      }
+    }
+    roomDetail[roomId] = {roomId: roomId, stairs: [[], [], [], [], [], [], [], []], deck: [], playerHands: {}, playerDecks: {}, playerPiles: {} };
+    socket.leave(roomId); // 🔑 muy importante: también lo sacás del "room" de Socket.IO
+  });
 });
 
 httpServer.listen(3000, () => console.log("Servidor escuchando en :3000"));
@@ -96,6 +125,7 @@ function createNewGame(roomId: string) {
   const values = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
   const valueMap: Record<string, number> = { 'A': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13 };
   const decks = ["A", "B"];
+  //const decks = ["A"];
   let deck: Card[] = [];
 
   decks.forEach(deckId => {
@@ -125,7 +155,7 @@ function dealInitialHands(roomId: string, deck: Card[], initialPlayerHand = 5, i
   const player2Id = players[1];
 
   // Cartas específicas para test
-  const player1Cards = ["♥A#A", "♦2#B", "♣3#B", "♠4#B", "♥5#B"];
+  const player1Cards = ["♥A#A", "♦2#A", "♣3#A", "♠4#A", "♥5#A"];
   const player2Cards = ["♦6#A", "♣7#A", "♠8#A", "♥9#A", "♦10#A"];
 
   roomDetail[roomId].playerHands[player1Id] = [];

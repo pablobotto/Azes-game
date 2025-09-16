@@ -1,0 +1,32 @@
+<div class="modal-backdrop" *ngIf="result">
+   <div class="modal" [ngClass]="{'modal-win': result === playerName, 'modal-lose': result !== 'empate' && result !== playerName, 'modal-draw': result === 'empate'}">
+      <h2 *ngIf="result !== 'empate' && result === playerName">
+         🏆🎉 ¡Felicidades {{playerName}}! Ganaste la partida 🎉🏆
+      </h2>
+      <h2 *ngIf="result !== 'empate' && result !== playerName">
+         💩💩 {{result}} te acaba de ganar. La próxima será 💩💩
+      </h2>
+      <h2 *ngIf="result === 'empate'">
+         Empate 🤝
+      </h2>
+      <button (click)="closeModal()">Cerrar</button>
+   </div>
+   <div *ngIf="result !== 'empate' && result === playerName">
+      <div class="trophy" style="left: 10%;">🏆</div>
+      <div class="trophy" style="left: 30%; animation-delay: 1s;">🏆</div>
+      <div class="trophy" style="left: 70%; animation-delay: 0.5s;">🏆</div>
+      <div class="trophy" style="left: 90%; animation-delay: 1.5s;">🏆</div>
+   </div>
+   <div *ngIf="result === 'empate'">
+      <div class="trophy" style="left: 10%;">🤝</div>
+      <div class="trophy" style="left: 30%; animation-delay: 1s;">🤝</div>
+      <div class="trophy" style="left: 70%; animation-delay: 0.5s;">🤝</div>
+      <div class="trophy" style="left: 90%; animation-delay: 1.5s;">🤝</div>
+   </div>
+   <div *ngIf="result !== 'empate' && result !== playerName">
+      <div class="trophy" style="left: 10%;">💩</div>
+      <div class="trophy" style="left: 30%; animation-delay: 1s;">💩</div>
+      <div class="trophy" style="left: 70%; animation-delay: 0.5s;">💩</div>
+      <div class="trophy" style="left: 90%; animation-delay: 1.5s;">💩</div>
+   </div>
+</div>

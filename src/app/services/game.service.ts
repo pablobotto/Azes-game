@@ -22,6 +22,8 @@ export class GameService {
   opponentPiles: Card[][] = [[], [], []];
   playerDeck: Card[] = [];     // las 10 cartas del jugador
   opponentDeck: Card[] = [];   // las 10 cartas del rival
+  public gameResult$ = new BehaviorSubject<string | null>(null);
+
   constructor() {}
 
   get getStairs(): Card[][] {
@@ -64,7 +66,16 @@ export class GameService {
     this.shuffle();
     this.dealInitialHands();
   }
-
+  async ResetValues() {
+    this.deck = [];
+    this.playerHand = [];
+    this.opponentHand = [];
+    this.playerPiles = [[], [], []];
+    this.opponentPiles = [[], [], []];
+    this.stairs.next([[], [], [], [], [], [], [], []]);
+    this.playerDeck = [];
+    this.opponentDeck = [];
+  }
   // Mezcla el mazo
   async shuffle() {
     this.deck.sort(() => Math.random() - 0.5);
@@ -99,7 +110,7 @@ export class GameService {
       if (opponentCard) this.opponentDeck.push(opponentCard);
     }
   }
-
+ 
   // Roba una carta del mazo
   drawCard(): Card | null {
     if (this.deck.length === 0) return null;

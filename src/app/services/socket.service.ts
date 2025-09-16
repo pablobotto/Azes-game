@@ -43,8 +43,11 @@ export class SocketService {
       this.gameServerData.currentPlayerId = data.newCurrentPlayer;
       this.startTurn$.next();
     });
-    this.socket.on("full", () => {
-      this.gameStatus.next("full");
+    this.socket.on("lose", (data) => {
+      this.gameService.gameResult$.next(this.opponentName$.getValue());
+    });
+    this.socket.on("tie", (data) => {
+      this.gameService.gameResult$.next("empate");
     });
   }
 
@@ -63,6 +66,9 @@ export class SocketService {
   async disconnect() {
     this.socket.disconnect();
   }
+  async leaveRoom() {
+    this.socket.emit('leaveRoom', this.room$.getValue());
+  }
   async updateReShufle() {
     this.gameServerData.deck = this.gameService.deck;
     this.gameServerData.stairs = this.gameService.getStairs;
@@ -71,8 +77,13 @@ export class SocketService {
   async sendDisplayOpponentName(playerName: string) {
     this.socket.emit('displayOpponentName', this.room$.getValue(), playerName);
   }
+  async sendWin() {
+    this.socket.emit('win', this.gameServerData.roomId);
+  }
+  async sendTie() {
+    this.socket.emit('tie', this.gameServerData.roomId);
+  }
   private updateGameState(gameState: any) {
-    //console.log('Game state:', gameState);
     this.gameServerData = gameState;
     this.gameService.deck = gameState.deck;
     this.gameService.setStairs(gameState.stairs);
@@ -85,5 +96,13 @@ export class SocketService {
     this.gameService.opponentHand = gameState.playerHands[opponentId as string];
     this.gameService.opponentDeck = gameState.playerDecks[opponentId as string];
     this.gameService.opponentPiles = gameState.playerPiles[opponentId as string];
+  }
+  async resetValues() {
+    this.socketId= "non-multiplayer";
+    this.gameServerData = {};
+    this.currentPlayerId$.next("non-multiplayer");
+    this.opponentName$.next("Oponente");
+    this.room$.next("");
+    this.gameStatus.next("idle"); // idle | waiting | ready | full
   }
 }

@@ -6,6 +6,7 @@ import { GameRulesService } from '../../services/gameRules.service';
 import { Card } from '../../models/card.model';
 import { CardComponent } from '../card/card';
 import { DeckComponent } from '../deck/deck';
+import { GameResultModalComponent } from '../result-modal/result-modal';
 import { CdkDragDrop, DragDropModule, transferArrayItem } from '@angular/cdk/drag-drop';
 import { GameStepService } from '../../services/gameSteps.service';
 import { CurrentPlayerType } from '../../enum/player.enum';
@@ -19,7 +20,7 @@ import { NotificationService } from '../../services/notification.service';
   selector: 'app-board',
   templateUrl: './board.html',
   styleUrls: ['./board.scss'],
-  imports: [CommonModule, CardComponent, DeckComponent, NotificationComponent, DragDropModule, FormsModule],
+  imports: [CommonModule, CardComponent, DeckComponent, NotificationComponent, GameResultModalComponent , DragDropModule, FormsModule],
 })
 export class BoardComponent implements AfterViewInit {
   currentPlayerType$: typeof this.gameSteps.currentPlayerType$;
@@ -33,7 +34,8 @@ export class BoardComponent implements AfterViewInit {
   joined = false;
   gameStarted = false;
   playerName: string = '';
-  OpponentInformationNameSent: boolean = false;
+
+  gameResult: string | null = null;
 
   Player = CurrentPlayerType;
   GameStep = GameStep;
@@ -62,9 +64,8 @@ export class BoardComponent implements AfterViewInit {
           this.cd.detectChanges();
           break;
         case GameStep.Playing:
-          if (this.socketService.socketId !== "non-multiplayer" && this.OpponentInformationNameSent === false) {
+          if (this.socketService.socketId !== "non-multiplayer") {
             await this.sendDisplayOpponentName();
-            this.OpponentInformationNameSent = true;
           }
           console.log(`Step actual: ${step}, Jugador actual: ${player}`);
           if (player === CurrentPlayerType.Cpu) {
@@ -104,9 +105,22 @@ export class BoardComponent implements AfterViewInit {
     this.socketService.startTurn$.subscribe(async () => {
       await this.startNewMPTurn();
     });
+    this.game.gameResult$.subscribe(result => {
+      this.gameResult = result;
+      this.cd.detectChanges();
+    });
+
+    // Suscribirse a empate
+    this.gameSteps.tie$.subscribe(() => {
+      this.game.gameResult$.next("empate"); 
+      if (this.socketService.socketId !== "non-multiplayer") {
+        this.socketService.sendTie();
+      }
+    });
   }
 
   async joinRoom() {
+    console.log("Uniendose a la sala", this.roomId);
     await this.socketService.joinRoom(this.roomId);
     this.joined = true;
   }
@@ -122,16 +136,32 @@ export class BoardComponent implements AfterViewInit {
   async sendDisplayOpponentName() {
     this.socketService.sendDisplayOpponentName(this.playerName);
   }
+  async win() {
+    this.game.gameResult$.next(this.playerName); 
+    if (this.socketService.socketId !== "non-multiplayer") {
+      this.socketService.sendWin();
+    }
+  }
+  async closeMpGame() {
+    await this.socketService.leaveRoom();
+    await this.resetValues();
+    await this.game.ResetValues();
+    await this.gameSteps.resetValues();
+    await this.socketService.resetValues();
+    this.cd.detectChanges();
+  }
   async startNewSPGame() {
     this.game.newGame();
     this.gameSteps.resetGame();
   }
-  async onDragEnd() {
-    this.game.playerPiles = [...this.game.playerPiles];
+
+  async onDragEnd(event: any, i: number, j: number) {
+    const element = event.source.element.nativeElement; element.style.position = 'absolute'; this.cd.detectChanges();
+    setTimeout(() => this.cd.detectChanges(), 0);
   }
 
   async drop(event: CdkDragDrop<Card[]>) {
-    if (event.previousContainer === event.container) {} else {
+    if (event.previousContainer === event.container) {this.cd.detectChanges();} else {
       if (event.container.id.startsWith('stair')) {
         if (await this.gameSteps.play(this.Player.Player, this.socketService.socketId)) { 
           var card: Card = event.previousContainer.data[event.previousIndex];
@@ -139,9 +169,12 @@ export class BoardComponent implements AfterViewInit {
             transferArrayItem(event.previousContainer.data, event.container.data, event.previousIndex, event.currentIndex );
             event.container.data.sort((a, b) => a.numericValue - b.numericValue);
             await this.playInStairMultiplayer();
+            if (this.game.playerDeck.length === 0) {
+              this.win();
+            } else {
             if (await this.gameRules.canGetMoreCardsInTheCurrentTurn(this.game.playerHand)) {
               await this.startNewMPTurn();
-            }
+            }}
           }
           else { this.notificationService.show(`⚠ Movimiento No Permitido`); }
         }       
@@ -156,9 +189,22 @@ export class BoardComponent implements AfterViewInit {
         } else { this.notificationService.show('⚠ Juega Primero el As'); }
       } 
     }
+    await new Promise(resolve => setTimeout(resolve, 20));
+    this.cd.detectChanges();
   }
+  
   //Control BehaviorSubject
   isNameValid(): boolean {
     return this.playerName.trim().length >= 3;
+  }
+  closeModal() {
+    this.game.gameResult$.next(null);
+    this.closeMpGame();
+  }
+  async resetValues() {
+    this.joined = false;
+    this.gameStarted = false;
+    this.playerName = '';
+    this.gameResult = null;
   }
 }
