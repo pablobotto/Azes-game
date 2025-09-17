@@ -9,7 +9,10 @@
       <h2 *ngIf="result === 'empate'">
          Empate 🤝
       </h2>
-      <button (click)="closeModal()">Cerrar</button>
+      <div class="modal-buttons">  
+         <button (click)="startRematch()" [class.dots]="rematchStarted"><span *ngIf="!rematchStarted">Revancha</span></button>
+         <button (click)="closeModal()">Salir</button>
+      </div>
    </div>
    <div *ngIf="result !== 'empate' && result === playerName">
       <div class="trophy" style="left: 10%;">🏆</div>

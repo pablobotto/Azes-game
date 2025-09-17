@@ -12,8 +12,14 @@ export class GameResultModalComponent {
   @Input() result: string | null = null;
   @Input() playerName: string = '';
   @Output() close = new EventEmitter<void>();
+  rematchStarted = false;
 
   closeModal() {
+    this.rematchStarted = false;
     this.close.emit();
+  }
+  startRematch() {
+    this.rematchStarted = true;
+    // acá podés iniciar la lógica de la revancha
   }
 }
