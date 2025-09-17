@@ -8,6 +8,7 @@ export class SocketService {
   private socket: Socket;
   public socketId: string = "non-multiplayer";
   private gameServerData: any
+  private rivalRequestedRematch = false;
 
   startTurn$ = new Subject<void>();
 
@@ -49,6 +50,12 @@ export class SocketService {
     this.socket.on("tie", (data) => {
       this.gameService.gameResult$.next("empate");
     });
+    this.socket.on("rematchAccepted", (data) => {
+      this.updateGameState(data.gameState);
+    });
+    this.socket.on("requestRematch", (data) => {
+      this.rivalRequestedRematch = true;
+    });
   }
 
   async joinRoom(roomId: string) {
@@ -76,6 +83,15 @@ export class SocketService {
   }
   async sendDisplayOpponentName(playerName: string) {
     this.socket.emit('displayOpponentName', this.room$.getValue(), playerName);
+  }
+  async sendRematch(){
+    if(this.rivalRequestedRematch){
+      //LLAMAR A FUNCION DE INICIAR REVANCHA
+      this.rivalRequestedRematch = false;
+      this.socket.emit('rematchAccepted', this.room$.getValue());
+    } else {
+      this.socket.emit('requestRematch', this.room$.getValue());
+    }
   }
   async sendWin() {
     this.socket.emit('win', this.gameServerData.roomId);

@@ -109,7 +109,6 @@ export class BoardComponent implements AfterViewInit {
       this.gameResult = result;
       this.cd.detectChanges();
     });
-
     // Suscribirse a empate
     this.gameSteps.tie$.subscribe(() => {
       this.game.gameResult$.next("empate"); 
