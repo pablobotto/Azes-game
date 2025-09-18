@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { io, Socket } from 'socket.io-client';
 import { BehaviorSubject, Observable, Subject } from 'rxjs';
 import { GameService } from './game.service';
+import { environment } from '../../enviroments/environment';
 
 @Injectable({ providedIn: 'root' })
 export class SocketService {
@@ -20,7 +21,7 @@ export class SocketService {
   gameStatus$ = this.gameStatus.asObservable();
 
   constructor(private gameService: GameService, ) {
-    this.socket = io('http://localhost:3000');
+    this.socket = io(environment.apiUrl);
     this.socket.on("identification", (data) => {
       this.socketId = data.socketId;
     });
