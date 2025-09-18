@@ -1,9 +1,8 @@
 <!-- Inicial -->
 <div class="header-container">
   <input class="name-input" type="text" placeholder="Escribí tu nombre" [(ngModel)]="playerName" [disabled]="joined">
-  <button class="start-button" (click)="startNewSPGame()" [disabled]="!isNameValid()">Vs CPU</button>
+  <button class="start-button" (click)="startNewSPGame()" [disabled]="true">Vs CPU</button>
   <button class="start-button" (click)="joinRoom()" [disabled]="!isNameValid()">Unirse</button>
-  <button class="start-button" (click)="win()" >Win</button>
   <div *ngIf="(status$ | async) === 'waiting'"> Esperando rival...</div>
   <div *ngIf="(status$ | async) === 'ready'">
     <h2 *ngIf="(currentPlayerId$ | async) === socketService.socketId" class="pill pill-green">
@@ -19,12 +18,12 @@
   <div class="board">  
       <!-- Aquí mostrarás las 5 cartas del rival -->
     <div class="opponent-cards">
-       <app-card *ngFor="let card of game.opponentHand" [card]="card" [faceDown]="true"></app-card>
-        <div class="opponent-deck">
-          <div *ngFor="let card of game.opponentDeck; let isLast = last">
-            <app-card [card]="card" [faceDown]="!isLast"></app-card>
-          </div>
+      <app-fake-card *ngFor="let card of game.opponentHand"></app-fake-card>
+      <div class="opponent-deck">
+        <div *ngFor="let card of game.opponentDeck; let isLast = last">
+          <app-card [card]="card" [faceDown]="!isLast"></app-card>
         </div>
+      </div>
     </div>   
     
     <div class="middle-area">
@@ -45,9 +44,10 @@
         <div class="stairs">
           <div *ngFor="let stair of (stairs$ | async); let i = index" 
             cdkDropList class="stair-slot" [id]="'stair' + (i + 1)" 
-            [cdkDropListData]="stair" (cdkDropListDropped)="drop($event)">
+            [cdkDropListData]="stair" (cdkDropListDropped)="drop($event)" [ngClass]="{'stair-slot-comodin': hasComodin(stair)}">
               <div *ngFor="let card of stair" style="position: absolute">
                 <app-card [card]="card"></app-card>
+                <div *ngIf="card.value === 'C'" class="tooltip">Joker: {{ getCardDisplayValue(card.numericValue) }}</div>
               </div>
           </div>
         </div>

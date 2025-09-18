@@ -5,7 +5,7 @@
     {{ card.value }}{{ card.suit }}
   </div>
   <div class="center">
-    {{ card.value }}{{ card.suit }}
+    {{ card.value !== 'C' ? card.value : '' }}{{ card.suit }}
   </div>
   <div class="corner bottom-right">
     {{ card.value }}{{ card.suit }}

@@ -46,7 +46,7 @@ export class GameStepService {
         if (player !== "non-multiplayer" && this.currentPlayerId$.getValue() !== player) { this.notificationService.show("⚠ No es tu Turno"); return; }
         var hand = this.currentPlayerType.getValue() === CurrentPlayerType.Player ? this.gameService.getHandPlCount() : this.gameService.getHandOpCount();
         for (const [i, stair] of this.gameService.getStairs.entries()) {
-            if (stair.length === 13 && stair[stair.length - 1].value === 'K') {
+            if (stair.length === 13 && (stair[stair.length - 1].value === 'K' || stair[stair.length - 1].value === 'C')) {
                 await this.gameService.removeStairAndReShufle(i);
                 await this.socketService.updateReShufle();
                 await new Promise(resolve => setTimeout(resolve, 100));

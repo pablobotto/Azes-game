@@ -15,12 +15,13 @@ import { combineLatest } from 'rxjs';
 import { SocketService } from '../../services/socket.service';
 import { NotificationComponent } from '../notification/notification';
 import { NotificationService } from '../../services/notification.service';
+import { FakeCardComponent } from '../fake-card/fake-card';
 
 @Component({
   selector: 'app-board',
   templateUrl: './board.html',
   styleUrls: ['./board.scss'],
-  imports: [CommonModule, CardComponent, DeckComponent, NotificationComponent, GameResultModalComponent , DragDropModule, FormsModule],
+  imports: [CommonModule, CardComponent, DeckComponent, FakeCardComponent, NotificationComponent, GameResultModalComponent , DragDropModule, FormsModule],
 })
 export class BoardComponent implements AfterViewInit {
   currentPlayerType$: typeof this.gameSteps.currentPlayerType$;
@@ -30,7 +31,6 @@ export class BoardComponent implements AfterViewInit {
   currentPlayerId$: typeof this.socketService.currentPlayerId$;
   opponentName$: typeof this.socketService.opponentName$;
 
-  roomId = 'room1';
   joined = false;
   gameStarted = false;
   playerName: string = '';
@@ -39,6 +39,7 @@ export class BoardComponent implements AfterViewInit {
 
   Player = CurrentPlayerType;
   GameStep = GameStep;
+  private order = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
   constructor(public socketService: SocketService, public game: GameService, public gameRules: GameRulesService, public gameSteps: GameStepService, public notificationService: NotificationService ,private cd: ChangeDetectorRef) {
     this.currentPlayerType$ = this.gameSteps.currentPlayerType$;
     this.currentStep$ = this.gameSteps.currentStep$;
@@ -119,8 +120,7 @@ export class BoardComponent implements AfterViewInit {
   }
 
   async joinRoom() {
-    console.log("Uniendose a la sala", this.roomId);
-    await this.socketService.joinRoom(this.roomId);
+    await this.socketService.joinRoom();
     this.joined = true;
   }
   async playInStairMultiplayer() {
@@ -205,5 +205,11 @@ export class BoardComponent implements AfterViewInit {
     this.gameStarted = false;
     this.playerName = '';
     this.gameResult = null;
+  }
+  hasComodin(stair: Card[] | undefined): boolean {
+    return !!stair?.some(c => c.value === 'C');
+  }
+  getCardDisplayValue(numericValue: number): string {
+    return this.order[numericValue-1] || '?';
   }
 }

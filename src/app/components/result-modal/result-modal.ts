@@ -25,6 +25,5 @@ export class GameResultModalComponent {
   startRematch() {
     this.rematchStarted = true;
     this.socketService.sendRematch();
-    // acá podés iniciar la lógica de la revancha
   }
 }
