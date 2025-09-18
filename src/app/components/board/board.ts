@@ -1,4 +1,4 @@
-import { AfterViewInit, ChangeDetectorRef, Component, NgZone} from '@angular/core';
+import { AfterViewInit, ChangeDetectorRef, Component} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { GameService } from '../../services/game.service';
@@ -6,18 +6,22 @@ import { GameRulesService } from '../../services/gameRules.service';
 import { Card } from '../../models/card.model';
 import { CardComponent } from '../card/card';
 import { DeckComponent } from '../deck/deck';
-import { CdkDrag, CdkDragDrop, CdkDropList, DragDropModule, moveItemInArray, transferArrayItem } from '@angular/cdk/drag-drop';
+import { GameResultModalComponent } from '../result-modal/result-modal';
+import { CdkDragDrop, DragDropModule, transferArrayItem } from '@angular/cdk/drag-drop';
 import { GameStepService } from '../../services/gameSteps.service';
 import { CurrentPlayerType } from '../../enum/player.enum';
 import { GameStep } from '../../enum/game-step.enum';
 import { combineLatest } from 'rxjs';
 import { SocketService } from '../../services/socket.service';
+import { NotificationComponent } from '../notification/notification';
+import { NotificationService } from '../../services/notification.service';
+import { FakeCardComponent } from '../fake-card/fake-card';
 
 @Component({
   selector: 'app-board',
   templateUrl: './board.html',
   styleUrls: ['./board.scss'],
-  imports: [CommonModule, CardComponent, DeckComponent, DragDropModule, FormsModule],
+  imports: [CommonModule, CardComponent, DeckComponent, FakeCardComponent, NotificationComponent, GameResultModalComponent , DragDropModule, FormsModule],
 })
 export class BoardComponent implements AfterViewInit {
   currentPlayerType$: typeof this.gameSteps.currentPlayerType$;
@@ -27,15 +31,16 @@ export class BoardComponent implements AfterViewInit {
   currentPlayerId$: typeof this.socketService.currentPlayerId$;
   opponentName$: typeof this.socketService.opponentName$;
 
-  roomId = 'room1';
   joined = false;
   gameStarted = false;
   playerName: string = '';
-  OpponentInformationNameSent: boolean = false;
+
+  gameResult: string | null = null;
 
   Player = CurrentPlayerType;
   GameStep = GameStep;
-  constructor(public socketService: SocketService, public game: GameService, public gameRules: GameRulesService, public gameSteps: GameStepService, private cd: ChangeDetectorRef) {
+  private order = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+  constructor(public socketService: SocketService, public game: GameService, public gameRules: GameRulesService, public gameSteps: GameStepService, public notificationService: NotificationService ,private cd: ChangeDetectorRef) {
     this.currentPlayerType$ = this.gameSteps.currentPlayerType$;
     this.currentStep$ = this.gameSteps.currentStep$;
     this.stairs$ = this.game.stairs$;
@@ -60,9 +65,8 @@ export class BoardComponent implements AfterViewInit {
           this.cd.detectChanges();
           break;
         case GameStep.Playing:
-          if (this.socketService.socketId !== "non-multiplayer" && this.OpponentInformationNameSent === false) {
+          if (this.socketService.socketId !== "non-multiplayer") {
             await this.sendDisplayOpponentName();
-            this.OpponentInformationNameSent = true;
           }
           console.log(`Step actual: ${step}, Jugador actual: ${player}`);
           if (player === CurrentPlayerType.Cpu) {
@@ -89,7 +93,6 @@ export class BoardComponent implements AfterViewInit {
       }
     });
     this.socketService.gameStatus$.subscribe(status => {
-      console.log('Estado del juego:', status);
       this.cd.detectChanges();
     });
     this.game.stairs$.subscribe(async stairs => {
@@ -103,10 +106,21 @@ export class BoardComponent implements AfterViewInit {
     this.socketService.startTurn$.subscribe(async () => {
       await this.startNewMPTurn();
     });
+    this.game.gameResult$.subscribe(result => {
+      this.gameResult = result;
+      this.cd.detectChanges();
+    });
+    // Suscribirse a empate
+    this.gameSteps.tie$.subscribe(() => {
+      this.game.gameResult$.next("empate"); 
+      if (this.socketService.socketId !== "non-multiplayer") {
+        this.socketService.sendTie();
+      }
+    });
   }
 
   async joinRoom() {
-    await this.socketService.joinRoom(this.roomId);
+    await this.socketService.joinRoom();
     this.joined = true;
   }
   async playInStairMultiplayer() {
@@ -121,16 +135,32 @@ export class BoardComponent implements AfterViewInit {
   async sendDisplayOpponentName() {
     this.socketService.sendDisplayOpponentName(this.playerName);
   }
+  async win() {
+    this.game.gameResult$.next(this.playerName); 
+    if (this.socketService.socketId !== "non-multiplayer") {
+      this.socketService.sendWin();
+    }
+  }
+  async closeMpGame() {
+    await this.socketService.leaveRoom();
+    await this.resetValues();
+    await this.game.ResetValues();
+    await this.gameSteps.resetValues();
+    await this.socketService.resetValues();
+    this.cd.detectChanges();
+  }
   async startNewSPGame() {
     this.game.newGame();
     this.gameSteps.resetGame();
   }
-  async onDragEnd() {
-    this.game.playerPiles = [...this.game.playerPiles];
+
+  async onDragEnd(event: any, i: number, j: number) {
+    const element = event.source.element.nativeElement; element.style.position = 'absolute'; this.cd.detectChanges();
+    setTimeout(() => this.cd.detectChanges(), 0);
   }
 
   async drop(event: CdkDragDrop<Card[]>) {
-    if (event.previousContainer === event.container) {} else {
+    if (event.previousContainer === event.container) {this.cd.detectChanges();} else {
       if (event.container.id.startsWith('stair')) {
         if (await this.gameSteps.play(this.Player.Player, this.socketService.socketId)) { 
           var card: Card = event.previousContainer.data[event.previousIndex];
@@ -138,11 +168,14 @@ export class BoardComponent implements AfterViewInit {
             transferArrayItem(event.previousContainer.data, event.container.data, event.previousIndex, event.currentIndex );
             event.container.data.sort((a, b) => a.numericValue - b.numericValue);
             await this.playInStairMultiplayer();
+            if (this.game.playerDeck.length === 0) {
+              this.win();
+            } else {
             if (await this.gameRules.canGetMoreCardsInTheCurrentTurn(this.game.playerHand)) {
               await this.startNewMPTurn();
-            }
+            }}
           }
-          else { console.log('Movimiento no permitido' ); }
+          else { this.notificationService.show(`⚠ Movimiento No Permitido`); }
         }       
       } else {
         if (await this.gameRules.canDiscardToPile(this.game.playerHand)) {
@@ -152,12 +185,31 @@ export class BoardComponent implements AfterViewInit {
             event.container.data.push(card);
             await this.playInStairMultiplayer();
           }
-        } else { console.log('No puedes descartar a las pilas sin un As en la mano'); }
+        } else { this.notificationService.show('⚠ Juega Primero el As'); }
       } 
     }
+    await new Promise(resolve => setTimeout(resolve, 20));
+    this.cd.detectChanges();
   }
+  
   //Control BehaviorSubject
   isNameValid(): boolean {
     return this.playerName.trim().length >= 3;
+  }
+  closeModal() {
+    this.game.gameResult$.next(null);
+    this.closeMpGame();
+  }
+  async resetValues() {
+    this.joined = false;
+    this.gameStarted = false;
+    this.playerName = '';
+    this.gameResult = null;
+  }
+  hasComodin(stair: Card[] | undefined): boolean {
+    return !!stair?.some(c => c.value === 'C');
+  }
+  getCardDisplayValue(numericValue: number): string {
+    return this.order[numericValue-1] || '?';
   }
 }

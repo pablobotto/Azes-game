@@ -2,19 +2,10 @@ import { Injectable, NgZone} from '@angular/core';
 import { GameService } from './game.service';
 import { GameRulesService } from './gameRules.service';
 import { Card } from '../models/card.model';
-import { GameZone } from '../enum/game-zone.enum';
-import { CurrentPlayerType } from '../enum/player.enum';
 import { DiscardPoints } from '../models/discardPoints.model';
-
-export interface CpuMove {
-  fromZone: GameZone;
-  toZone: GameZone;
-  card: Card;
-}
 
 @Injectable({ providedIn: 'root' })
 export class CpuAiService {
-
     constructor(private gameService: GameService, private rulesService: GameRulesService, private ngZone: NgZone) {}
 
     async play() {

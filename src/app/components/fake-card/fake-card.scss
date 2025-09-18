@@ -1,0 +1,15 @@
+.fake-card {
+  position: relative; /* necesario para que las esquinas se posicionen absolutas */
+  width: 60px;
+  height: 90px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 28px;
+  box-shadow: 2px 2px rgba(255, 255, 255, 0.200);
+  user-select: none;
+  background: url('../../../assets/back-card.png') center/cover no-repeat;
+  border: 1px solid #111;
+  border-radius: 6px;
+  position: relative;
+}

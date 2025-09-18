@@ -3,7 +3,7 @@
   align-self: center;
   padding: 10px 20px;
   font-size: 18px;
-  background-color: #4cafef;
+  background-color: #222;
   border: none;
   border-radius: 8px;
   color: white;
@@ -11,7 +11,7 @@
   transition: background 0.3s;
 }
 .start-button:hover {
-  background-color: #379cd4;
+  background-color: #315e3b;
 }
 .start-button:disabled {
   opacity: 0.5;       /* se ve más claro */
@@ -32,8 +32,8 @@
   font-size: 16px;
   max-width: 100px;
   margin-left: 5px;
-  margin-block-start: 0.83em;
-  margin-block-end: 0.83em;
+  margin-block-start: 0.33em;
+  margin-block-end: 0.33em;
 }
 
 .name-input::placeholder {
@@ -43,12 +43,14 @@
 .pill {
   display: inline-block;
   padding: 6px 14px;
-  background-color: #4caf50;   /* verde */
+  background-color: #4caf50;
   color: white;
-  border-radius: 9999px;       /* bordes súper redondeados */
+  border-radius: 9999px;
   font-weight: 500;
   font-size: 16px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  margin-block-start: 0.33em;
+  margin-block-end: 0.33em;
 }
 
 .pill-green {
@@ -77,7 +79,7 @@
 
 .pile-slot {
   width: 80px;
-  height: 110px;
+  height: 150px;
   border: 2px dashed #ffffff; /* línea punteada */
   border-radius: 8px;
   box-sizing: border-box;
@@ -107,27 +109,45 @@
   justify-content: center;
   align-items: center;
   font-size: 2.5rem;
-  color: #999;
   background-color: rgba(255, 255, 255, 0.2);
   position: relative !important;
 }
+.stair-slot-comodin {
+  border-color: yellow !important;
+}
+.stair-slot:hover .tooltip {
+  visibility: visible;
+  opacity: 1;
+}
+
+.tooltip {
+  visibility: hidden;
+  opacity: 0;
+  position: absolute;
+  bottom: 100%; /* arriba de la carta */
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #333;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  transition: opacity 0.2s;
+  pointer-events: none;
+  white-space: nowrap;
+}
 //End Stairs
 //PlayerDecks
+.opponent-deck,
 .player-deck {
-  position: relative;
-  left: 120px;
-}
-.player-deck div {
   position: absolute;
-  left: 0;
-  top: 0;
-  transition: top 0.2s;
+  left: 75%;           /* parte desde el centro */
+  transform: translateX(-50%); /* lo centra exacto */
+  top: 0;              /* ajustá según quieras arriba o más abajo */
 }
-.opponent-deck {
-  position: relative;
-  left: 120px;
-}
-.opponent-deck div {
+
+.opponent-deck div,
+.player-deck div {
   position: absolute;
   left: 0;
   top: 0;
@@ -148,10 +168,10 @@
     display: flex;
     flex-wrap: wrap;
     flex-direction: column;
-    gap: 16px;
-    padding: 10px;
+    gap: 5px;
+    padding: 5px;
     min-height: 200px;
-    justify-content: space-between;
+    justify-content: center;
     background-image: url('../../../assets/board-background.jpg');
     background-size: cover;
     background-position: center;
@@ -161,13 +181,22 @@
 }
 
 /* Tablero dentro del game-screen */
+.opponent-cards {
+  flex: 0 0 auto;  /* no crece, queda en alto natural */
+}
 .opponent-cards,
 .player-cards {
   display: flex;
   justify-content: center;
   gap: 10px;
   min-height: 100px;
-  margin-bottom: 2.75rem;
+  position: relative;
+}
+.middle-area {
+  flex: 1;  /* ocupa todo el alto libre */
+  display: flex;
+  flex-direction: column;
+  justify-content: center; /* centra verticalmente */
 }
 .center-area {
   flex: 1; /* Ocupa el centro */
@@ -215,7 +244,6 @@
   justify-content: center;
   gap: 10px;
   min-height: 100px;
-  margin-top: 2.75rem;
   margin-bottom: 0;
 }
 

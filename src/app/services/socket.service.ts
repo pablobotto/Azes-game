@@ -8,6 +8,7 @@ export class SocketService {
   private socket: Socket;
   public socketId: string = "non-multiplayer";
   private gameServerData: any
+  private rivalRequestedRematch = false;
 
   startTurn$ = new Subject<void>();
 
@@ -27,7 +28,6 @@ export class SocketService {
       this.gameStatus.next("waiting");
     });
     this.socket.on("ready", (data) => {
-      console.log("Juego listo:", data.gameState.roomId);
       this.room$.next(data.gameState.roomId);
       this.gameStatus.next("ready");
       this.currentPlayerId$.next(data.gameState.currentPlayerId);
@@ -44,13 +44,23 @@ export class SocketService {
       this.gameServerData.currentPlayerId = data.newCurrentPlayer;
       this.startTurn$.next();
     });
-    this.socket.on("full", () => {
-      this.gameStatus.next("full");
+    this.socket.on("lose", (data) => {
+      this.gameService.gameResult$.next(this.opponentName$.getValue());
+    });
+    this.socket.on("tie", (data) => {
+      this.gameService.gameResult$.next("empate");
+    });
+    this.socket.on("rematchAccepted", (data) => {
+      this.gameService.gameResult$.next(null)
+      this.updateGameState(data.gameState);
+    });
+    this.socket.on("requestRematch", (data) => {
+      this.rivalRequestedRematch = true;
     });
   }
 
-  async joinRoom(roomId: string) {
-    this.socket.emit('joinRoom', roomId);
+  async joinRoom() {
+    this.socket.emit('joinRoom');
   }
   async playCard() {
     this.socket.emit('playCard', this.gameServerData);
@@ -64,6 +74,9 @@ export class SocketService {
   async disconnect() {
     this.socket.disconnect();
   }
+  async leaveRoom() {
+    this.socket.emit('leaveRoom', this.room$.getValue());
+  }
   async updateReShufle() {
     this.gameServerData.deck = this.gameService.deck;
     this.gameServerData.stairs = this.gameService.getStairs;
@@ -72,9 +85,21 @@ export class SocketService {
   async sendDisplayOpponentName(playerName: string) {
     this.socket.emit('displayOpponentName', this.room$.getValue(), playerName);
   }
+  async sendRematch(){
+    if(this.rivalRequestedRematch){
+      this.rivalRequestedRematch = false;
+      this.socket.emit('rematchAccepted', this.room$.getValue());
+    } else {
+      this.socket.emit('requestRematch', this.room$.getValue());
+    }
+  }
+  async sendWin() {
+    this.socket.emit('win', this.gameServerData.roomId);
+  }
+  async sendTie() {
+    this.socket.emit('tie', this.gameServerData.roomId);
+  }
   private updateGameState(gameState: any) {
-    console.log('Game state:', gameState);
-
     this.gameServerData = gameState;
     this.gameService.deck = gameState.deck;
     this.gameService.setStairs(gameState.stairs);
@@ -87,5 +112,13 @@ export class SocketService {
     this.gameService.opponentHand = gameState.playerHands[opponentId as string];
     this.gameService.opponentDeck = gameState.playerDecks[opponentId as string];
     this.gameService.opponentPiles = gameState.playerPiles[opponentId as string];
+  }
+  async resetValues() {
+    this.socketId= "non-multiplayer";
+    this.gameServerData = {};
+    this.currentPlayerId$.next("non-multiplayer");
+    this.opponentName$.next("Oponente");
+    this.room$.next("");
+    this.gameStatus.next("idle"); // idle | waiting | ready | full
   }
 }

@@ -1,7 +1,7 @@
 <!-- Inicial -->
 <div class="header-container">
   <input class="name-input" type="text" placeholder="Escribí tu nombre" [(ngModel)]="playerName" [disabled]="joined">
-  <button class="start-button" (click)="startNewSPGame()" [disabled]="!isNameValid()">Vs CPU</button>
+  <button class="start-button" (click)="startNewSPGame()" [disabled]="true">Vs CPU</button>
   <button class="start-button" (click)="joinRoom()" [disabled]="!isNameValid()">Unirse</button>
   <div *ngIf="(status$ | async) === 'waiting'"> Esperando rival...</div>
   <div *ngIf="(status$ | async) === 'ready'">
@@ -18,44 +18,48 @@
   <div class="board">  
       <!-- Aquí mostrarás las 5 cartas del rival -->
     <div class="opponent-cards">
-       <app-card *ngFor="let card of game.opponentHand" [card]="card" [faceDown]="true"></app-card>
-        <div class="opponent-deck">
-          <div *ngFor="let card of game.opponentDeck; let isLast = last">
-            <app-card [card]="card" [faceDown]="!isLast"></app-card>
+      <app-fake-card *ngFor="let card of game.opponentHand"></app-fake-card>
+      <div class="opponent-deck">
+        <div *ngFor="let card of game.opponentDeck; let isLast = last">
+          <app-card [card]="card" [faceDown]="!isLast"></app-card>
+        </div>
+      </div>
+    </div>   
+    
+    <div class="middle-area">
+    <!-- Montones descartes rival -->
+      <div class="opponent-piles">
+        <div class="pile-slot" *ngFor="let pile of game.opponentPiles; let i = index">
+          <div *ngFor="let card of pile; let j = index" style="position: absolute" [ngStyle]="{'top.px': (j * -14) + 55}">
+            <app-card [card]="card"></app-card>
           </div>
         </div>
-    </div>   
-    <!-- Montones descartes rival -->
-    <div class="opponent-piles">
-      <div class="pile-slot" *ngFor="let pile of game.opponentPiles; let i = index">
-        <div *ngFor="let card of pile; let j = index" style="position: absolute" [ngStyle]="{'top.px': (j * -14) + 15}">
-          <app-card [card]="card"></app-card>
+      </div>
+      <!-- Área central con escaleras y mazo -->
+      <div class="center-area">
+        <div class="deck-area" #deckRef>
+          <app-deck></app-deck>
         </div>
-      </div>
-    </div>
-    <!-- Área central con escaleras y mazo -->
-    <div class="center-area">
-      <div class="deck-area" #deckRef>
-        <app-deck></app-deck>
-      </div>
-      <!-- Área escaleras-->
-      <div class="stairs">
-        <div *ngFor="let stair of (stairs$ | async); let i = index" 
-          cdkDropList class="stair-slot" [id]="'stair' + (i + 1)" 
-          [cdkDropListData]="stair" (cdkDropListDropped)="drop($event)">
-            <div *ngFor="let card of stair" style="position: absolute">
-              <app-card [card]="card"></app-card>
-            </div>
+        <!-- Área escaleras-->
+        <div class="stairs">
+          <div *ngFor="let stair of (stairs$ | async); let i = index" 
+            cdkDropList class="stair-slot" [id]="'stair' + (i + 1)" 
+            [cdkDropListData]="stair" (cdkDropListDropped)="drop($event)" [ngClass]="{'stair-slot-comodin': hasComodin(stair)}">
+              <div *ngFor="let card of stair" style="position: absolute">
+                <app-card [card]="card"></app-card>
+                <div *ngIf="card.value === 'C'" class="tooltip">Joker: {{ getCardDisplayValue(card.numericValue) }}</div>
+              </div>
+          </div>
         </div>
+        <div class="empty-area"></div>
       </div>
-      <div class="empty-area"></div>
-    </div>
-    <!-- Montones descartes jugador -->
-    <div class="player-piles">
-      <div class="pile-slot" cdkDropList [id]="'pile' + i" *ngFor="let pile of game.playerPiles; let i = index" [cdkDropListData]="game.playerPiles[i]" (cdkDropListDropped)="drop($event)"
-      [cdkDropListConnectedTo]="['stair1','stair2','stair3','stair4','stair5','stair6','stair7','stair8']" (cdkDragEnded)="onDragEnd()">
-        <div class="card-in-piles" *ngFor="let card of pile; let j = index"  style="position: absolute" [ngStyle]="{'transform': 'translateY(' + (j * 14) + 'px)','z-index': j}"[cdkDragFreeDragPosition]="{x: 0, y: j * 14}" cdkDrag>
-          <app-card [card]="card"></app-card>
+      <!-- Montones descartes jugador -->
+      <div class="player-piles">
+        <div class="pile-slot" cdkDropList [id]="'pile' + i" *ngFor="let pile of game.playerPiles; let i = index" [cdkDropListData]="game.playerPiles[i]" (cdkDropListDropped)="drop($event)"
+        [cdkDropListConnectedTo]="['stair1','stair2','stair3','stair4','stair5','stair6','stair7','stair8']">
+          <div class="card-in-piles" *ngFor="let card of pile; let j = index; let isLast = last"  style="position: absolute" [ngStyle]="{'transform': 'translateY(' + ((j * 14) - 28)+ 'px)','z-index': j}"[cdkDragFreeDragPosition]="{x: 0, y: j * 14}" cdkDrag [cdkDragDisabled]="!isLast" (cdkDragEnded)="onDragEnd($event, i, j)">
+            <app-card [card]="card"></app-card>
+          </div>
         </div>
       </div>
     </div>
@@ -67,11 +71,12 @@
       <div class="player-deck" cdkDropList [cdkDropListConnectedTo]="['stair1','stair2','stair3','stair4','stair5','stair6','stair7','stair8']" [cdkDropListData]="game.playerDeck">
         <div *ngFor="let card of game.playerDeck; let isLast = last" cdkDrag>
             <app-card [card]="card" [faceDown]="!isLast"></app-card>
-            <ng-template cdkDragPlaceholder>
-              <div class="empty-slot"></div>
-            </ng-template>
+            <ng-template cdkDragPlaceholder><div class="empty-slot"></div></ng-template>
         </div>
       </div>
     </div>
   </div>
 </div>
+<!-- Notificaciones flotantes -->
+<app-game-result-modal [result]="gameResult" [playerName]="playerName" (close)="closeModal()"></app-game-result-modal>
+<app-notification></app-notification>
