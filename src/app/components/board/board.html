@@ -78,5 +78,5 @@
   </div>
 </div>
 <!-- Notificaciones flotantes -->
-<app-game-result-modal [result]="gameResult" [playerName]="playerName" (close)="closeModal()"></app-game-result-modal>
+<app-game-result-modal *ngIf="gameResult$ | async as result" [result]="result" [playerName]="playerName" (close)="closeModal()"></app-game-result-modal>
 <app-notification></app-notification>

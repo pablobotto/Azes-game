@@ -11,7 +11,7 @@ import { CdkDragDrop, DragDropModule, transferArrayItem } from '@angular/cdk/dra
 import { GameStepService } from '../../services/gameSteps.service';
 import { CurrentPlayerType } from '../../enum/player.enum';
 import { GameStep } from '../../enum/game-step.enum';
-import { combineLatest } from 'rxjs';
+import { combineLatest, Observable } from 'rxjs';
 import { SocketService } from '../../services/socket.service';
 import { NotificationComponent } from '../notification/notification';
 import { NotificationService } from '../../services/notification.service';
@@ -30,7 +30,7 @@ export class BoardComponent implements AfterViewInit {
   status$: typeof this.socketService.gameStatus$;
   currentPlayerId$: typeof this.socketService.currentPlayerId$;
   opponentName$: typeof this.socketService.opponentName$;
-
+  gameResult$: Observable<string | null>;
   joined = false;
   gameStarted = false;
   playerName: string = '';
@@ -47,6 +47,7 @@ export class BoardComponent implements AfterViewInit {
     this.status$ = this.socketService.gameStatus$;
     this.currentPlayerId$ = this.socketService.currentPlayerId$;
     this.opponentName$ = this.socketService.opponentName$;
+    this.gameResult$ = this.game.gameResult$
   }
 
   ngAfterViewInit(): void {}

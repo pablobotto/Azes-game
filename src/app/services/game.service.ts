@@ -84,10 +84,12 @@ export class GameService {
   async removeStairAndReShufle(stairIndex: number) {
     // Tomar el 50% de abajo del mazo actual
     const cutIndex = Math.floor(this.deck.length / 2);
-    const bottomHalf = this.deck.slice(cutIndex);
-    const topHalf = this.deck.slice(0, cutIndex);
+    const bottomHalf = this.deck.slice(0 , cutIndex);
+    const topHalf = this.deck.slice(cutIndex);
     // Insertar la escalera mezclada dentro del bottomHalf
-    const newBottom = bottomHalf.concat(this.stairs.getValue()[stairIndex])
+    let newBottom = bottomHalf.concat(this.stairs.getValue()[stairIndex])
+    newBottom.sort(() => Math.random() - 0.5);
+    //Quitar todo de la escalera
     const stairs = this.stairs.getValue();
     const updatedStairs = [...stairs]; 
     updatedStairs[stairIndex] = []; 
