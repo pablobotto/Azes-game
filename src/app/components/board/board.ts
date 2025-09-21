@@ -11,7 +11,7 @@ import { CdkDragDrop, DragDropModule, transferArrayItem } from '@angular/cdk/dra
 import { GameStepService } from '../../services/gameSteps.service';
 import { CurrentPlayerType } from '../../enum/player.enum';
 import { GameStep } from '../../enum/game-step.enum';
-import { combineLatest, Observable } from 'rxjs';
+import { BehaviorSubject, combineLatest, Observable, take, timer } from 'rxjs';
 import { SocketService } from '../../services/socket.service';
 import { NotificationComponent } from '../notification/notification';
 import { NotificationService } from '../../services/notification.service';
@@ -36,6 +36,8 @@ export class BoardComponent implements AfterViewInit {
   playerName: string = '';
 
   gameResult: string | null = null;
+  private syncBlock$ = new BehaviorSubject<boolean>(false);
+  isSyncButtonBlocked$ = this.syncBlock$.asObservable();
 
   Player = CurrentPlayerType;
   GameStep = GameStep;
@@ -212,5 +214,13 @@ export class BoardComponent implements AfterViewInit {
   }
   getCardDisplayValue(numericValue: number): string {
     return this.order[numericValue-1] || '?';
+  }
+  syncGame() {
+    if (this.syncBlock$.value) return;
+    this.syncBlock$.next(true);
+    this.socketService.checkSync();
+    timer(2500)
+      .pipe(take(1))
+      .subscribe(() => this.syncBlock$.next(false));
   }
 }

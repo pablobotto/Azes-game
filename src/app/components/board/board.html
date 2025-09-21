@@ -65,13 +65,18 @@
     </div>
     <!-- Cartas del jugador abajo -->
     <div cdkDropList [cdkDropListConnectedTo]="['pile0','pile1','pile2','stair1','stair2','stair3','stair4','stair5','stair6','stair7','stair8']" [cdkDropListData]="game.playerHand" class="player-cards">
+      <div class="sync-button-container">
+        <button [disabled]="isSyncButtonBlocked$ | async" (click)="syncGame()" class="sync-button">
+          <span class="arrow" [class.rotate]="isSyncButtonBlocked$ | async">&#x21bb;</span>
+        </button>
+      </div>
       <div *ngFor="let card of game.playerHand" cdkDrag [cdkDragData]="card">
         <app-card [card]="card"></app-card>
       </div>
       <div class="player-deck" cdkDropList [cdkDropListConnectedTo]="['stair1','stair2','stair3','stair4','stair5','stair6','stair7','stair8']" [cdkDropListData]="game.playerDeck">
         <div *ngFor="let card of game.playerDeck; let isLast = last" cdkDrag>
-            <app-card [card]="card" [faceDown]="!isLast"></app-card>
-            <ng-template cdkDragPlaceholder><div class="empty-slot"></div></ng-template>
+          <app-card [card]="card" [faceDown]="!isLast"></app-card>
+          <ng-template cdkDragPlaceholder><div class="empty-slot"></div></ng-template>
         </div>
       </div>
     </div>
