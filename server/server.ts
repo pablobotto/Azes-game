@@ -2,9 +2,32 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { Card } from "./card.model";
 import { GameState } from "./gameState.model";
+import express from "express";
+import cors from "cors";
 
-const httpServer = createServer();
-const io = new Server(httpServer, { cors: { origin: "*" } });
+const app = express();
+const allowedOrigins = [
+  "http://localhost:4200",           // desarrollo local
+  "https://azes-game.vercel.app"     // producción (tu Angular en Vercel)
+];
+app.use(cors({
+  origin: allowedOrigins,
+  methods: ["GET", "POST"],
+  credentials: true
+}));
+app.get("/", (req, res) => {
+  res.send("Servidor Socket.IO funcionando!");
+});
+
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: {
+    origin: allowedOrigins,
+    methods: ["GET", "POST"],
+    credentials: true
+  }
+});
+
 let roomDetail: Record<string, GameState> = {};
 let rooms: Record<string, string[]> = {};
 const roomQueues: Record<string, RoomQueue> = {};
