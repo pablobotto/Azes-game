@@ -21,7 +21,8 @@ export class SocketService {
   gameStatus$ = this.gameStatus.asObservable();
 
   constructor(private gameService: GameService, ) {
-    this.socket = io("https://azes-game.onrender.com");
+    this.socket = io("https://azes-game.onrender.com", { transports: ["websocket"], reconnection: true,   reconnectionAttempts: Infinity, reconnectionDelay: 1000 });
+    //this.socket = io("http://localhost:3000", { transports: ["websocket"], reconnection: true,   reconnectionAttempts: Infinity, reconnectionDelay: 1000 });
     this.socket.on("identification", (data) => {
       this.socketId = data.socketId;
     });
@@ -57,6 +58,32 @@ export class SocketService {
     });
     this.socket.on("requestRematch", (data) => {
       this.rivalRequestedRematch = true;
+    });
+    this.socket.on("checkUpdate", (data) => {
+      this.updateGameState(data.gameState);
+    });
+    this.socket.on("getGameState", (data) => {
+      console.log("Estado recibido del server");
+      if (data.gameState.currentPlayerId === this.socketId){
+        console.log("sos el que deberia jugar");
+        if (this.currentPlayerId$.getValue() !== data.gameState.currentPlayerId){
+          console.log("esta descatualizado el actual jugador");
+          if (data.gameState.deck.length !== this.gameServerData.deck.length){
+            console.log("tus cartas no coinciden, descargando cartas");
+            this.updateGameState(data.gameState);
+          }
+        }
+      }
+      else {
+        console.log("no sos el que deberia jugar");
+        if (this.currentPlayerId$.getValue() !== data.gameState.currentPlayerId){
+          console.log("esta descatualizado el actual jugador");
+          if (data.gameState.deck.length !== this.gameServerData.deck.length){
+            console.log("tus cartas no coinciden, mandando de nuevo el turno");
+            this.playCard();
+          }
+        }
+      }
     });
   }
 
@@ -99,6 +126,9 @@ export class SocketService {
   }
   async sendTie() {
     this.socket.emit('tie', this.gameServerData.roomId);
+  }
+  async checkSync() {
+    this.socket.emit('getGameState', this.gameServerData.roomId);
   }
   private updateGameState(gameState: any) {
     this.gameServerData = gameState;
