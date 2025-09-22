@@ -68,8 +68,10 @@ export class SocketService {
         console.log("sos el que deberia jugar");
         if (this.currentPlayerId$.getValue() !== data.gameState.currentPlayerId){
           console.log("esta descatualizado el actual jugador");
-          if (data.gameState.deck.length !== this.gameServerData.deck.length){
+          const opponentId = Object.keys(data.gameState.playerHands).find(id => id !== this.socketId);          
+          if (this.gameService.opponentHand === data.gameState.playerHands[opponentId as string]){
             console.log("tus cartas no coinciden, descargando cartas");
+            this.currentPlayerId$.next(data.gameState.currentPlayerId);
             this.updateGameState(data.gameState);
           }
         }
@@ -78,10 +80,8 @@ export class SocketService {
         console.log("no sos el que deberia jugar");
         if (this.currentPlayerId$.getValue() !== data.gameState.currentPlayerId){
           console.log("esta descatualizado el actual jugador");
-          if (data.gameState.deck.length !== this.gameServerData.deck.length){
-            console.log("tus cartas no coinciden, mandando de nuevo el turno");
-            this.playCard();
-          }
+          console.log("intentando mandar cartas");
+          this.playCard();
         }
       }
     });
