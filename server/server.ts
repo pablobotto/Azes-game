@@ -13,6 +13,12 @@ io.on("connection", (socket) => {
   console.log("Cliente conectado:", socket.id);
   socket.on("joinRoom", () => {
     console.log(`joinRoom pedido por ${socket.id}`);
+    // revisar si ya está en una sala
+    let currentRoom = Object.keys(rooms).find(r => rooms[r].includes(socket.id));
+    if (currentRoom) {
+      console.log(`El socket ${socket.id} ya está en la sala ${currentRoom}`);
+      return;
+    }
     // crear room si no existe
     let roomId = Object.keys(rooms).find(r => rooms[r].length < 2);
     if (!roomId) {
@@ -26,7 +32,7 @@ io.on("connection", (socket) => {
     roomDetail[roomId].playerHands = { ...roomDetail[roomId].playerHands, [socket.id]: [] };
     roomDetail[roomId].playerPiles = { ...roomDetail[roomId].playerPiles, [socket.id]: [[],[],[]]};
     socket.join(roomId);
-    console.log(`Sala ${roomId} ahora tiene:`, rooms[roomId], "con detalle", roomDetail[roomId]);
+    console.log(`Sala ${roomId} ahora tiene:`, rooms[roomId]);
 
     if (rooms[roomId].length === 1) {
       roomDetail[roomId].currentPlayerId = socket.id;
@@ -98,12 +104,15 @@ io.on("connection", (socket) => {
     if (socket.id === socketId) {
       console.log(`el socket ${socket.id} es el mismo`);
     } else {
+      console.log(`el socket no es el mismo, reconfigurando`);
+      roomDetail[roomId].currentPlayerId = roomDetail[roomId].currentPlayerId === socketId ? socket.id : roomDetail[roomId].currentPlayerId;
       rooms[roomId] = rooms[roomId].filter(id => id !== socketId);
       rooms[roomId].push(socket.id);
       replacePlayerIdKey(roomDetail[roomId].playerHands, socketId, socket.id);
       replacePlayerIdKey(roomDetail[roomId].playerDecks, socketId, socket.id);
       replacePlayerIdKey(roomDetail[roomId].playerPiles, socketId, socket.id);
       socket.join(roomId);
+      socket.emit("rejoined", {gameState: roomDetail[roomId] , socketId: socket.id});
     }
   });
 
@@ -116,7 +125,7 @@ io.on("connection", (socket) => {
         rooms[r].splice(idx, 1);
         console.log(`Removido ${socket.id} de ${r}. Quedan:`, rooms[r]);
         // si la sala queda vacía podés borrarla
-        if (rooms[r].length === 0) delete rooms[r];
+        if (rooms[r].length === 0) {delete rooms[r]; delete roomDetail[r];}
         else {
           // avisar al otro jugador que el rival se desconectó
           io.to(r).emit("opponentLeft", { roomId: r });
@@ -151,7 +160,6 @@ function createNewGame(roomId: string) {
   const values = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
   const valueMap: Record<string, number> = { 'A': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13 };
   const decks = ["A", "B"];
-  //const decks = ["A"];
   let deck: Card[] = [];
 
   decks.forEach(deckId => {

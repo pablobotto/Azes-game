@@ -21,8 +21,8 @@ export class SocketService {
   gameStatus$ = this.gameStatus.asObservable();
 
   constructor(private gameService: GameService, ) {
-    this.socket = io("https://azes-game.onrender.com", { transports: ["websocket"], reconnection: true,   reconnectionAttempts: Infinity, reconnectionDelay: 1000 });
-    //this.socket = io("http://localhost:3000", { transports: ["websocket"], reconnection: true,   reconnectionAttempts: Infinity, reconnectionDelay: 1000 });
+    //this.socket = io("https://azes-game.onrender.com", { transports: ["websocket"], reconnection: true,   reconnectionAttempts: Infinity, reconnectionDelay: 1000 });
+    this.socket = io("http://localhost:3000", { transports: ["websocket"], reconnection: true,   reconnectionAttempts: Infinity, reconnectionDelay: 1000 });
     this.socket.on("identification", (data) => {
       this.socketId = data.socketId;
     });
@@ -67,10 +67,17 @@ export class SocketService {
       const me = Object.keys(data.gameState.playerHands).find(id => id === this.socketId);
       if (me === this.socketId){
         console.log("Estas en el room:",this.room$.getValue());
-        this.socket.emit('rejoin', this.gameServerData.roomId);
-        if (JSON.stringify(data.gameState.playerPiles[this.socketId]) !== JSON.stringify(this.gameService.playerPiles)) {
-            //this.socket.emit('rejoin', this.gameServerData.roomId);
-        }
+        this.socket.emit('rejoin', this.gameServerData.roomId , this.socketId);
+        //if (JSON.stringify(data.gameState.playerPiles[this.socketId]) !== JSON.stringify(this.gameService.playerPiles)) {}
+      }
+    });
+    this.socket.on("rejoined", (data) => {
+      this.socketId = data.socketId;
+      this.updateGameState(data.gameState);
+      if (data.gameState.currentPlayerId === this.socket) {
+        this.currentPlayerId$.next(data.gameState.currentPlayerId);
+      } else {
+        this.changePlayersOnline();
       }
     });
   }
