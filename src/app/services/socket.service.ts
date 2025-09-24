@@ -21,8 +21,8 @@ export class SocketService {
   gameStatus$ = this.gameStatus.asObservable();
 
   constructor(private gameService: GameService, ) {
-    this.socket = io("https://azes-game.onrender.com", { transports: ["websocket"], reconnection: true,   reconnectionAttempts: Infinity, reconnectionDelay: 1000 });
-    //this.socket = io("http://localhost:3000", { transports: ["websocket"], reconnection: true,   reconnectionAttempts: Infinity, reconnectionDelay: 1000 });
+    //this.socket = io("https://azes-game.onrender.com", { transports: ["websocket"], reconnection: true,   reconnectionAttempts: Infinity, reconnectionDelay: 1000 });
+    this.socket = io("http://localhost:3000", { transports: ["websocket"], reconnection: true,   reconnectionAttempts: Infinity, reconnectionDelay: 1000 });
     this.socket.on("identification", (data) => {
       this.socketId = data.socketId;
     });
@@ -63,26 +63,21 @@ export class SocketService {
       this.updateGameState(data.gameState);
     });
     this.socket.on("getGameState", (data) => {
-      console.log("Estado recibido del server");
-      if (data.gameState.currentPlayerId === this.socketId){
-        console.log("sos el que deberia jugar");
-        if (this.currentPlayerId$.getValue() !== data.gameState.currentPlayerId){
-          console.log("esta descatualizado el actual jugador");
-          const opponentId = Object.keys(data.gameState.playerHands).find(id => id !== this.socketId);          
-          if (this.gameService.opponentHand === data.gameState.playerHands[opponentId as string]){
-            console.log("tus cartas no coinciden, descargando cartas");
-            this.currentPlayerId$.next(data.gameState.currentPlayerId);
-            this.updateGameState(data.gameState);
-          }
-        }
+      console.log("Estado recibido del server:", this.room$.getValue());
+      const me = Object.keys(data.gameState.playerHands).find(id => id === this.socketId);
+      if (me === this.socketId){
+        console.log("Estas en el room:",this.room$.getValue());
+        this.socket.emit('rejoin', this.gameServerData.roomId , this.socketId);
+        //if (JSON.stringify(data.gameState.playerPiles[this.socketId]) !== JSON.stringify(this.gameService.playerPiles)) {}
       }
-      else {
-        console.log("no sos el que deberia jugar");
-        if (this.currentPlayerId$.getValue() !== data.gameState.currentPlayerId){
-          console.log("esta descatualizado el actual jugador");
-          console.log("intentando mandar cartas");
-          this.playCard();
-        }
+    });
+    this.socket.on("rejoined", (data) => {
+      this.socketId = data.socketId;
+      this.updateGameState(data.gameState);
+      if (data.gameState.currentPlayerId === this.socket) {
+        this.currentPlayerId$.next(data.gameState.currentPlayerId);
+      } else {
+        this.changePlayersOnline();
       }
     });
   }
