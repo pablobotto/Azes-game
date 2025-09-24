@@ -63,25 +63,13 @@ export class SocketService {
       this.updateGameState(data.gameState);
     });
     this.socket.on("getGameState", (data) => {
-      console.log("Estado recibido del server");
-      if (data.gameState.currentPlayerId === this.socketId){
-        console.log("sos el que deberia jugar");
-        if (this.currentPlayerId$.getValue() !== data.gameState.currentPlayerId){
-          console.log("esta descatualizado el actual jugador");
-          const opponentId = Object.keys(data.gameState.playerHands).find(id => id !== this.socketId);          
-          if (this.gameService.opponentHand === data.gameState.playerHands[opponentId as string]){
-            console.log("tus cartas no coinciden, descargando cartas");
-            this.currentPlayerId$.next(data.gameState.currentPlayerId);
-            this.updateGameState(data.gameState);
-          }
-        }
-      }
-      else {
-        console.log("no sos el que deberia jugar");
-        if (this.currentPlayerId$.getValue() !== data.gameState.currentPlayerId){
-          console.log("esta descatualizado el actual jugador");
-          console.log("intentando mandar cartas");
-          this.playCard();
+      console.log("Estado recibido del server:", this.room$.getValue());
+      const me = Object.keys(data.gameState.playerHands).find(id => id === this.socketId);
+      if (me === this.socketId){
+        console.log("Estas en el room:",this.room$.getValue());
+        this.socket.emit('rejoin', this.gameServerData.roomId);
+        if (JSON.stringify(data.gameState.playerPiles[this.socketId]) !== JSON.stringify(this.gameService.playerPiles)) {
+            //this.socket.emit('rejoin', this.gameServerData.roomId);
         }
       }
     });

@@ -93,6 +93,19 @@ io.on("connection", (socket) => {
       socket.emit("getGameState", {gameState: roomDetail[roomId]});
     });
   });
+  socket.on("rejoin", ( roomId: string, socketId: string ) => {
+    console.log(`rejoin recibido en ${roomId} por ${socket.id} identificadonse con ${socketId}`);
+    if (socket.id === socketId) {
+      console.log(`el socket ${socket.id} es el mismo`);
+    } else {
+      rooms[roomId] = rooms[roomId].filter(id => id !== socketId);
+      rooms[roomId].push(socket.id);
+      replacePlayerIdKey(roomDetail[roomId].playerHands, socketId, socket.id);
+      replacePlayerIdKey(roomDetail[roomId].playerDecks, socketId, socket.id);
+      replacePlayerIdKey(roomDetail[roomId].playerPiles, socketId, socket.id);
+      socket.join(roomId);
+    }
+  });
 
   socket.on("disconnect", () => {
     console.log("Cliente desconectado:", socket.id);
@@ -228,4 +241,10 @@ async function processQueue(roomId: string) {
     }
   }
   room.processing = false;
+}
+function replacePlayerIdKey<T>(obj: Record<string, T>, oldId: string, newId: string ): void {
+  if (obj[oldId]) {
+    obj[newId] = obj[oldId]; // copia los datos
+    delete obj[oldId];       // elimina la key vieja
+  }
 }
