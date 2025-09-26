@@ -16,12 +16,13 @@ import { SocketService } from '../../services/socket.service';
 import { NotificationComponent } from '../notification/notification';
 import { NotificationService } from '../../services/notification.service';
 import { FakeCardComponent } from '../fake-card/fake-card';
+import { OpponentLeftModalComponent } from '../opponent-left-modal/opponent-left-modal';
 
 @Component({
   selector: 'app-board',
   templateUrl: './board.html',
   styleUrls: ['./board.scss'],
-  imports: [CommonModule, CardComponent, DeckComponent, FakeCardComponent, NotificationComponent, GameResultModalComponent , DragDropModule, FormsModule],
+  imports: [CommonModule, CardComponent, DeckComponent, FakeCardComponent, NotificationComponent, OpponentLeftModalComponent ,GameResultModalComponent , DragDropModule, FormsModule],
 })
 export class BoardComponent implements AfterViewInit {
   currentPlayerType$: typeof this.gameSteps.currentPlayerType$;
@@ -31,9 +32,11 @@ export class BoardComponent implements AfterViewInit {
   currentPlayerId$: typeof this.socketService.currentPlayerId$;
   opponentName$: typeof this.socketService.opponentName$;
   gameResult$: Observable<string | null>;
+
   joined = false;
   gameStarted = false;
   playerName: string = '';
+  hoverRoom = false;
 
   gameResult: string | null = null;
   private syncBlock$ = new BehaviorSubject<boolean>(false);
@@ -41,6 +44,8 @@ export class BoardComponent implements AfterViewInit {
 
   Player = CurrentPlayerType;
   GameStep = GameStep;
+
+  showOpponentLeftModal: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
   private order = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
   constructor(public socketService: SocketService, public game: GameService, public gameRules: GameRulesService, public gameSteps: GameStepService, public notificationService: NotificationService ,private cd: ChangeDetectorRef) {
     this.currentPlayerType$ = this.gameSteps.currentPlayerType$;
@@ -108,6 +113,13 @@ export class BoardComponent implements AfterViewInit {
     });
     this.socketService.startTurn$.subscribe(async () => {
       await this.startNewMPTurn();
+    });
+    this.socketService.disconnect$.subscribe(async () => {
+      this.showOpponentLeftModal.next(true)
+      this.cd.detectChanges();
+    });
+    this.socketService.room$.subscribe(async () => {
+      this.cd.detectChanges();
     });
     this.game.gameResult$.subscribe(result => {
       this.gameResult = result;
@@ -204,6 +216,7 @@ export class BoardComponent implements AfterViewInit {
     this.closeMpGame();
   }
   async resetValues() {
+    this.hoverRoom = false;
     this.joined = false;
     this.gameStarted = false;
     this.playerName = '';

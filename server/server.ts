@@ -20,7 +20,9 @@ io.on("connection", (socket) => {
       return;
     }
     // crear room si no existe
-    let roomId = Object.keys(rooms).find(r => rooms[r].length < 2);
+    let roomId = Object.keys(rooms).find(r => 
+      rooms[r].length < 2 && (!roomDetail[r].deck || roomDetail[r].deck.length === 0)
+    );
     if (!roomId) {
       roomId = `room${Object.keys(rooms).length + 1}`;
       rooms[roomId] = [];
@@ -127,6 +129,7 @@ io.on("connection", (socket) => {
         // si la sala queda vacía podés borrarla
         if (rooms[r].length === 0) {delete rooms[r]; delete roomDetail[r];}
         else {
+          console.log("Enviando ");
           // avisar al otro jugador que el rival se desconectó
           io.to(r).emit("opponentLeft", { roomId: r });
         }
@@ -142,12 +145,13 @@ io.on("connection", (socket) => {
       console.log(`Removido ${socket.id} de ${roomId}. Quedan:`, rooms[roomId]);
       if (rooms[roomId].length === 0) {
         delete rooms[roomId];
+        delete roomDetail[roomId];
       } else {
         socket.to(roomId).emit("opponentLeft", { roomId });
       }
     }
-    roomDetail[roomId] = {roomId: roomId, stairs: [[], [], [], [], [], [], [], []], deck: [], playerHands: {}, playerDecks: {}, playerPiles: {} };
-    socket.leave(roomId); // 🔑 muy importante: también lo sacás del "room" de Socket.IO
+    //roomDetail[roomId] = {roomId: roomId, stairs: [[], [], [], [], [], [], [], []], deck: [], playerHands: {}, playerDecks: {}, playerPiles: {} };
+    socket.leave(roomId);
   });
 });
 
