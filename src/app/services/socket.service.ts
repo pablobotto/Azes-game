@@ -75,7 +75,7 @@ export class SocketService {
     this.socket.on("rejoined", (data) => {
       this.socketId = data.socketId;
       this.updateGameState(data.gameState);
-      if (data.gameState.currentPlayerId === this.socket) {
+      if (data.gameState.currentPlayerId === this.socketId) {
         this.currentPlayerId$.next(data.gameState.currentPlayerId);
       } else {
         this.changePlayersOnline();

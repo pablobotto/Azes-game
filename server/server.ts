@@ -106,11 +106,12 @@ io.on("connection", (socket) => {
     if (socket.id === socketId) {
       console.log(`el socket ${socket.id} es el mismo`);
     } else {
-      console.log(`el socket no es el mismo, reconfigurando`);
+      console.log(`el socket no es el mismo, reconfigurando, manos actualis ${roomDetail[roomId].playerHands}`);
       roomDetail[roomId].currentPlayerId = roomDetail[roomId].currentPlayerId === socketId ? socket.id : roomDetail[roomId].currentPlayerId;
       rooms[roomId] = rooms[roomId].filter(id => id !== socketId);
       rooms[roomId].push(socket.id);
       replacePlayerIdKey(roomDetail[roomId].playerHands, socketId, socket.id);
+      console.log(`reconfig complete, manos actualis ${roomDetail[roomId].playerHands}`);
       replacePlayerIdKey(roomDetail[roomId].playerDecks, socketId, socket.id);
       replacePlayerIdKey(roomDetail[roomId].playerPiles, socketId, socket.id);
       socket.join(roomId);
@@ -129,7 +130,6 @@ io.on("connection", (socket) => {
         // si la sala queda vacía podés borrarla
         if (rooms[r].length === 0) {delete rooms[r]; delete roomDetail[r];}
         else {
-          console.log("Enviando ");
           // avisar al otro jugador que el rival se desconectó
           io.to(r).emit("opponentLeft", { roomId: r });
         }
