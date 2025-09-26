@@ -22,8 +22,8 @@ export class SocketService {
   gameStatus$ = this.gameStatus.asObservable();
 
   constructor(private gameService: GameService, ) {
-    this.socket = io("https://azes-game.onrender.com", { transports: ["websocket"], reconnection: true,   reconnectionAttempts: Infinity, reconnectionDelay: 1000 });
-    //this.socket = io("http://localhost:3000", { transports: ["websocket"], reconnection: true,   reconnectionAttempts: Infinity, reconnectionDelay: 1000 });
+    //this.socket = io("https://azes-game.onrender.com", { transports: ["websocket"], reconnection: true,   reconnectionAttempts: Infinity, reconnectionDelay: 1000 });
+    this.socket = io("http://localhost:3000", { transports: ["websocket"], reconnection: true,   reconnectionAttempts: Infinity, reconnectionDelay: 1000 });
     this.socket.on("identification", (data) => {
       this.socketId = data.socketId;
     });
@@ -75,7 +75,7 @@ export class SocketService {
     this.socket.on("rejoined", (data) => {
       this.socketId = data.socketId;
       this.updateGameState(data.gameState);
-      if (data.gameState.currentPlayerId === this.socket) {
+      if (data.gameState.currentPlayerId === this.socketId) {
         this.currentPlayerId$.next(data.gameState.currentPlayerId);
       } else {
         this.changePlayersOnline();
