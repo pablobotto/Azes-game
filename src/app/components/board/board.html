@@ -3,7 +3,7 @@
   <input class="name-input" type="text" placeholder="Escribí tu nombre" [(ngModel)]="playerName" [disabled]="joined">
   <button class="start-button" (click)="startNewSPGame()" [disabled]="true">Vs CPU</button>
   <button class="start-button" (click)="joinRoom()" [disabled]="!isNameValid()">Unirse</button>
-  <div *ngIf="(status$ | async) === 'waiting'"> Esperando rival...</div>
+  <div *ngIf="(status$ | async) === 'waiting'"> Esperando rival ...</div>
   <div *ngIf="(status$ | async) === 'ready'">
     <h2 *ngIf="(currentPlayerId$ | async) === socketService.socketId" class="pill pill-green">
       {{ (currentStep$ | async) }}: {{ playerName }}
@@ -11,6 +11,9 @@
     <h2 *ngIf="(currentPlayerId$ | async) !== socketService.socketId" class="pill pill-red">
       Turno de {{opponentName$ | async}}
     </h2>
+  </div>
+  <div *ngIf="(socketService.room$ | async) as roomId" class="pill pill-room" (mouseenter)="hoverRoom = true" (mouseleave)="hoverRoom = false"
+       (click)="closeMpGame()"> {{ hoverRoom ? 'Salir' : 'Sala: ' + roomId }}
   </div>
 </div>
 <!-- Tablero Principal -->
@@ -83,5 +86,6 @@
   </div>
 </div>
 <!-- Notificaciones flotantes -->
+<app-opponent-left-modal *ngIf="showOpponentLeftModal | async" [playerName]="opponentName$ | async" (close)="showOpponentLeftModal.next(false)"></app-opponent-left-modal>
 <app-game-result-modal *ngIf="gameResult$ | async as result" [result]="result" [playerName]="playerName" (close)="closeModal()"></app-game-result-modal>
 <app-notification></app-notification>

@@ -12,6 +12,7 @@ export class SocketService {
   private rivalRequestedRematch = false;
 
   startTurn$ = new Subject<void>();
+  disconnect$ = new Subject<void>();
 
   public currentPlayerId$ = new BehaviorSubject<string>("non-multiplayer");
   public opponentName$ = new BehaviorSubject<string>("Oponente");
@@ -79,6 +80,10 @@ export class SocketService {
       } else {
         this.changePlayersOnline();
       }
+    });
+    this.socket.on('opponentLeft', (data) => {
+      console.log("desconectado")
+      this.disconnect$.next();
     });
   }
 
