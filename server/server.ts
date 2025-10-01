@@ -96,7 +96,6 @@ io.on("connection", (socket) => {
     });
   });
   socket.on("getGameState", ( roomId: string ) => {
-    console.log(`getGameState`);
     enqueue(roomId, async () => {
       socket.emit("getGameState", {gameState: roomDetail[roomId]});
     });
@@ -106,16 +105,22 @@ io.on("connection", (socket) => {
     if (socket.id === socketId) {
       console.log(`el socket ${socket.id} es el mismo`);
     } else {
-      console.log(`el socket no es el mismo, reconfigurando, manos actualis ${roomDetail[roomId].playerHands}`);
-      roomDetail[roomId].currentPlayerId = roomDetail[roomId].currentPlayerId === socketId ? socket.id : roomDetail[roomId].currentPlayerId;
-      rooms[roomId] = rooms[roomId].filter(id => id !== socketId);
-      rooms[roomId].push(socket.id);
-      replacePlayerIdKey(roomDetail[roomId].playerHands, socketId, socket.id);
-      console.log(`reconfig complete, manos actualis ${roomDetail[roomId].playerHands}`);
-      replacePlayerIdKey(roomDetail[roomId].playerDecks, socketId, socket.id);
-      replacePlayerIdKey(roomDetail[roomId].playerPiles, socketId, socket.id);
-      socket.join(roomId);
-      socket.emit("rejoined", {gameState: roomDetail[roomId] , socketId: socket.id});
+      if (roomDetail[roomId] && Object.keys(roomDetail[roomId]).length > 0) {
+        console.log(`el socket no es el mismo, reconfigurando, mano actual ${roomDetail[roomId].playerHands[socketId]}`);
+        roomDetail[roomId].currentPlayerId = roomDetail[roomId].currentPlayerId === socketId ? socket.id : roomDetail[roomId].currentPlayerId;
+        rooms[roomId] = rooms[roomId].filter(id => id !== socketId);
+        rooms[roomId].push(socket.id);
+        replacePlayerIdKey(roomDetail[roomId].playerHands, socketId, socket.id);
+        console.log(`reconfiguracion completada, mano actual ${roomDetail[roomId].playerHands[socket.id]}`);
+        replacePlayerIdKey(roomDetail[roomId].playerDecks, socketId, socket.id);
+        replacePlayerIdKey(roomDetail[roomId].playerPiles, socketId, socket.id);
+        socket.join(roomId);
+        socket.emit("rejoined", {gameState: roomDetail[roomId] , socketId: socket.id});   
+      }
+      else
+      {
+        console.log(`la sala no existe mas`);
+      }
     }
   });
 

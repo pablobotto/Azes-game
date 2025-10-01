@@ -17,12 +17,13 @@ import { NotificationComponent } from '../notification/notification';
 import { NotificationService } from '../../services/notification.service';
 import { FakeCardComponent } from '../fake-card/fake-card';
 import { OpponentLeftModalComponent } from '../opponent-left-modal/opponent-left-modal';
+import { ReconnectModalComponent } from '../internet-connection/internet-connection';
 
 @Component({
   selector: 'app-board',
   templateUrl: './board.html',
   styleUrls: ['./board.scss'],
-  imports: [CommonModule, CardComponent, DeckComponent, FakeCardComponent, NotificationComponent, OpponentLeftModalComponent ,GameResultModalComponent , DragDropModule, FormsModule],
+  imports: [CommonModule, CardComponent, DeckComponent, FakeCardComponent, NotificationComponent, OpponentLeftModalComponent, ReconnectModalComponent ,GameResultModalComponent, DragDropModule, FormsModule],
 })
 export class BoardComponent implements AfterViewInit {
   currentPlayerType$: typeof this.gameSteps.currentPlayerType$;
@@ -46,6 +47,7 @@ export class BoardComponent implements AfterViewInit {
   GameStep = GameStep;
 
   showOpponentLeftModal: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
+  isDisconnected: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
   private order = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
   constructor(public socketService: SocketService, public game: GameService, public gameRules: GameRulesService, public gameSteps: GameStepService, public notificationService: NotificationService ,private cd: ChangeDetectorRef) {
     this.currentPlayerType$ = this.gameSteps.currentPlayerType$;
@@ -125,12 +127,17 @@ export class BoardComponent implements AfterViewInit {
       this.gameResult = result;
       this.cd.detectChanges();
     });
-    // Suscribirse a empate
     this.gameSteps.tie$.subscribe(() => {
       this.game.gameResult$.next("empate"); 
       if (this.socketService.socketId !== "non-multiplayer") {
         this.socketService.sendTie();
       }
+    });
+    this.socketService.internetConnectionLost$.subscribe(() => {
+      this.isDisconnected.next(true);
+    });
+    this.socketService.internetConnectionOn$.subscribe(() => {
+      this.isDisconnected.next(false);
     });
   }
 
