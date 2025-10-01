@@ -13,6 +13,8 @@ export class SocketService {
 
   startTurn$ = new Subject<void>();
   disconnect$ = new Subject<void>();
+  internetConnectionLost$ = new Subject<void>();
+  internetConnectionOn$ = new Subject<void>();
 
   public currentPlayerId$ = new BehaviorSubject<string>("non-multiplayer");
   public opponentName$ = new BehaviorSubject<string>("Oponente");
@@ -22,8 +24,8 @@ export class SocketService {
   gameStatus$ = this.gameStatus.asObservable();
 
   constructor(private gameService: GameService, ) {
-    this.socket = io("https://azes-game.onrender.com", { transports: ["websocket"], reconnection: true,   reconnectionAttempts: Infinity, reconnectionDelay: 1000 });
-    //this.socket = io("http://localhost:3000", { transports: ["websocket"], reconnection: true,   reconnectionAttempts: Infinity, reconnectionDelay: 1000 });
+    //this.socket = io("https://azes-game.onrender.com", { transports: ["websocket"], reconnection: true,   reconnectionAttempts: Infinity, reconnectionDelay: 1000 });
+    this.socket = io("http://localhost:3000", { transports: ["websocket"], reconnection: true,   reconnectionAttempts: Infinity, reconnectionDelay: 1000 });
     this.socket.on("identification", (data) => {
       this.socketId = data.socketId;
     });
@@ -63,7 +65,7 @@ export class SocketService {
     this.socket.on("checkUpdate", (data) => {
       this.updateGameState(data.gameState);
     });
-    this.socket.on("getGameState", (data) => {
+    /*this.socket.on("getGameState", (data) => {
       console.log("Estado recibido del server:", this.room$.getValue());
       const me = Object.keys(data.gameState.playerHands).find(id => id === this.socketId);
       if (me === this.socketId){
@@ -71,7 +73,7 @@ export class SocketService {
         this.socket.emit('rejoin', this.gameServerData.roomId , this.socketId);
         //if (JSON.stringify(data.gameState.playerPiles[this.socketId]) !== JSON.stringify(this.gameService.playerPiles)) {}
       }
-    });
+    });*/
     this.socket.on("rejoined", (data) => {
       this.socketId = data.socketId;
       this.updateGameState(data.gameState);
@@ -84,6 +86,20 @@ export class SocketService {
     this.socket.on('opponentLeft', (data) => {
       console.log("desconectado")
       this.disconnect$.next();
+    });
+    this.socket.on("connect", () => {
+      console.log("Conectado al servidor:", this.socket.id);
+      if (this.socketId !== 'non-multiplayer' && this.socketId !== this.socket.id) {
+        this.socket.emit('rejoin', this.gameServerData.roomId , this.socketId);        
+        this.internetConnectionOn$.next();
+      }
+    });
+    this.socket.on("disconnect", (reason) => {
+      console.warn("Se desconectó:", reason);
+      this.internetConnectionLost$.next();
+    });
+    this.socket.on("connect_error", (err) => {
+      console.error("Error de conexión:", err.message);
     });
   }
 

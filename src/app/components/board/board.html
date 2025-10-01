@@ -68,11 +68,11 @@
     </div>
     <!-- Cartas del jugador abajo -->
     <div cdkDropList [cdkDropListConnectedTo]="['pile0','pile1','pile2','stair1','stair2','stair3','stair4','stair5','stair6','stair7','stair8']" [cdkDropListData]="game.playerHand" class="player-cards">
-      <div class="sync-button-container">
+      <!--<div class="sync-button-container">
         <button [disabled]="isSyncButtonBlocked$ | async" (click)="syncGame()" class="sync-button">
           <span class="arrow" [class.rotate]="isSyncButtonBlocked$ | async">&#x21bb;</span>
         </button>
-      </div>
+      </div>-->
       <div *ngFor="let card of game.playerHand" cdkDrag [cdkDragData]="card">
         <app-card [card]="card"></app-card>
       </div>
@@ -88,4 +88,5 @@
 <!-- Notificaciones flotantes -->
 <app-opponent-left-modal *ngIf="showOpponentLeftModal | async" [playerName]="opponentName$ | async" (close)="showOpponentLeftModal.next(false)"></app-opponent-left-modal>
 <app-game-result-modal *ngIf="gameResult$ | async as result" [result]="result" [playerName]="playerName" (close)="closeModal()"></app-game-result-modal>
+<app-internet-connection-modal *ngIf="isDisconnected | async"></app-internet-connection-modal>
 <app-notification></app-notification>
