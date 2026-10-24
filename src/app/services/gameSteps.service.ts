@@ -39,7 +39,18 @@ export class GameStepService {
         this.currentPlayerType.next(CurrentPlayerType.Player);
         this.currentStep.next(GameStep.Initializing);
     }
+    private drawing = false;
     async draw(playerType: CurrentPlayerType, player: string = "non-multiplayer") {
+        // un segundo disparo (ej. reconexion) no debe robar en paralelo con el que esta en curso
+        if (this.drawing) return;
+        this.drawing = true;
+        try {
+            await this.drawInternal(playerType, player);
+        } finally {
+            this.drawing = false;
+        }
+    }
+    private async drawInternal(playerType: CurrentPlayerType, player: string) {
         await new Promise(resolve => setTimeout(resolve, 650));
         if (this.currentPlayerType.getValue() !== playerType) { this.notificationService.show("⚠ No es tu Turno"); return; }
         if (this.currentStep.getValue() !== GameStep.Drawing) { this.notificationService.show(`⚠ Paso incorrecto.`); return;}
@@ -80,13 +91,18 @@ export class GameStepService {
         }
         return true;
     }
-    async discard(playerType: CurrentPlayerType, player: string = "non-multiplayer"): Promise<boolean> {
+    // Mismas validaciones que discard(), sin avanzar de paso. Permite enviar el descarte antes de pasar el turno.
+    canDiscard(playerType: CurrentPlayerType, player: string = "non-multiplayer"): boolean {
         if (this.currentPlayerType.getValue() !== playerType) { this.notificationService.show("⚠ No es tu Turno"); return false; }
         if (!(this.currentStep.getValue() === GameStep.Discarding || (this.currentStep.getValue() === GameStep.Playing && playerType === CurrentPlayerType.Player))) {
             this.notificationService.show(`⚠ Paso incorrecto.`);
             return false;
         }
         if (player !== "non-multiplayer" && this.currentPlayerId$.getValue() !== player) { this.notificationService.show("⚠ No es tu Turno"); return false; }
+        return true;
+    }
+    async discard(playerType: CurrentPlayerType, player: string = "non-multiplayer"): Promise<boolean> {
+        if (!this.canDiscard(playerType, player)) return false;
         if (playerType === CurrentPlayerType.Cpu) {
             await this.gameCpu.discard();
         }

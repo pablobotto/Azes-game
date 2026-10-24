@@ -12,6 +12,7 @@
       Turno de {{opponentName$ | async}}
     </h2>
   </div>
+  <div *ngIf="socketService.opponentOffline$ | async" class="pill pill-red">⚠ Tu rival perdió la conexión, esperando...</div>
   <div *ngIf="(socketService.room$ | async) as roomId" class="pill pill-room" (mouseenter)="hoverRoom = true" (mouseleave)="hoverRoom = false"
        (click)="closeMpGame()"> {{ hoverRoom ? 'Salir' : 'Sala: ' + roomId }}
   </div>
