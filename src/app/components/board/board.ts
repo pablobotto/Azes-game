@@ -139,6 +139,12 @@ export class BoardComponent implements AfterViewInit {
     this.socketService.internetConnectionOn$.subscribe(() => {
       this.isDisconnected.next(false);
     });
+    this.socketService.rejoinFailed$.subscribe(async () => {
+      this.isDisconnected.next(false);
+      this.notificationService.show('No se pudo recuperar la partida. ¡Buscá una nueva!');
+      await this.closeMpGame();
+      this.cd.detectChanges();
+    });
   }
 
   async joinRoom() {
@@ -201,11 +207,13 @@ export class BoardComponent implements AfterViewInit {
         }       
       } else {
         if (await this.gameRules.canDiscardToPile(this.game.playerHand)) {
-          if (await this.gameSteps.discard(CurrentPlayerType.Player, this.socketService.socketId)) {
+          if (this.gameSteps.canDiscard(CurrentPlayerType.Player, this.socketService.socketId)) {
             const card = event.previousContainer.data[event.previousIndex];
             event.previousContainer.data.splice(event.previousIndex, 1);
             event.container.data.push(card);
+            // primero se envia el descarte y recien despues discard() pasa el turno
             await this.playInStairMultiplayer();
+            await this.gameSteps.discard(CurrentPlayerType.Player, this.socketService.socketId);
           }
         } else { this.notificationService.show('⚠ Juega Primero el As'); }
       } 

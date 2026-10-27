@@ -1,168 +1,311 @@
 import { createServer } from "http";
-import { Server } from "socket.io";
+import { Server, Socket } from "socket.io";
 import { Card } from "./card.model";
 import { GameState } from "./gameState.model";
 
+// Tiempo que se espera a un jugador desconectado antes de darlo por ido.
+const GRACE_MS = 90_000;
+const KNOWN_GAMES = ["azes"];
+
 const httpServer = createServer();
-const io = new Server(httpServer, { cors: { origin: "*" } });
-let roomDetail: Record<string, GameState> = {};
-let rooms: Record<string, string[]> = {};
+const io = new Server(httpServer, {
+  cors: { origin: "*" },
+  // Detecta caidas de conexion mas rapido que el default (25s/20s).
+  pingInterval: 5000,
+  pingTimeout: 8000,
+});
+
+interface RoomMeta {
+  gameId: string;
+  started: boolean;
+  result?: { type: "win" | "tie"; winnerId?: string };
+  graceTimers: Record<string, NodeJS.Timeout>;
+}
+
+const roomDetail: Record<string, GameState> = {};
+const rooms: Record<string, string[]> = {};      // roomId -> playerIds
+const roomMeta: Record<string, RoomMeta> = {};
 const roomQueues: Record<string, RoomQueue> = {};
+const playerSockets: Record<string, string> = {}; // playerId -> socket.id actual
+let roomCounter = 0;
+
+process.on("uncaughtException", (err) => console.error("uncaughtException:", err));
+process.on("unhandledRejection", (err) => console.error("unhandledRejection:", err));
 
 io.on("connection", (socket) => {
-  console.log("Cliente conectado:", socket.id);
-  socket.on("joinRoom", () => {
-    console.log(`joinRoom pedido por ${socket.id}`);
+  // El playerId lo genera el cliente y sobrevive a las reconexiones (el socket.id no).
+  const auth = socket.handshake.auth as { playerId?: unknown } | undefined;
+  const playerId: string =
+    typeof auth?.playerId === "string" && auth.playerId.length > 0 && auth.playerId.length <= 64
+      ? auth.playerId
+      : socket.id;
+  console.log("Cliente conectado:", socket.id, "player:", playerId);
+
+  const previousSocketId = playerSockets[playerId];
+  playerSockets[playerId] = socket.id;
+  if (previousSocketId && previousSocketId !== socket.id) {
+    // socket "zombie" de una conexion que el servidor aun no detecto como caida
+    io.sockets.sockets.get(previousSocketId)?.disconnect(true);
+  }
+
+  const on = (event: string, handler: (...args: any[]) => void) => {
+    socket.on(event, (...args: any[]) => {
+      try {
+        handler(...args);
+      } catch (err) {
+        console.error(`Error en handler "${event}":`, err);
+      }
+    });
+  };
+
+  on("joinRoom", (gameId?: string) => {
+    const game = typeof gameId === "string" && KNOWN_GAMES.includes(gameId) ? gameId : "azes";
+    console.log(`joinRoom pedido por ${playerId} (${game})`);
     // revisar si ya está en una sala
-    let currentRoom = Object.keys(rooms).find(r => rooms[r].includes(socket.id));
+    const currentRoom = findRoomOf(playerId);
     if (currentRoom) {
-      console.log(`El socket ${socket.id} ya está en la sala ${currentRoom}`);
+      console.log(`El jugador ${playerId} ya está en la sala ${currentRoom}`);
       return;
     }
-    // crear room si no existe
-    let roomId = Object.keys(rooms).find(r => 
-      rooms[r].length < 2 && (!roomDetail[r].deck || roomDetail[r].deck.length === 0)
+    // buscar una sala del mismo juego que todavia no empezo
+    let roomId = Object.keys(rooms).find(r =>
+      roomMeta[r].gameId === game && !roomMeta[r].started && rooms[r].length < 2
     );
     if (!roomId) {
-      roomId = `room${Object.keys(rooms).length + 1}`;
+      roomId = `room${++roomCounter}`;
       rooms[roomId] = [];
+      roomMeta[roomId] = { gameId: game, started: false, graceTimers: {} };
       roomDetail[roomId] = { roomId, stairs: [[], [], [], [], [], [], [], []], deck: [], playerHands: {}, playerDecks: {}, playerPiles: {}};
     }
     // agregar y unirse
-    rooms[roomId].push(socket.id);
-    roomDetail[roomId].playerDecks = { ...roomDetail[roomId].playerDecks, [socket.id]: [] };
-    roomDetail[roomId].playerHands = { ...roomDetail[roomId].playerHands, [socket.id]: [] };
-    roomDetail[roomId].playerPiles = { ...roomDetail[roomId].playerPiles, [socket.id]: [[],[],[]]};
+    rooms[roomId].push(playerId);
+    roomDetail[roomId].playerDecks = { ...roomDetail[roomId].playerDecks, [playerId]: [] };
+    roomDetail[roomId].playerHands = { ...roomDetail[roomId].playerHands, [playerId]: [] };
+    roomDetail[roomId].playerPiles = { ...roomDetail[roomId].playerPiles, [playerId]: [[],[],[]]};
     socket.join(roomId);
     console.log(`Sala ${roomId} ahora tiene:`, rooms[roomId]);
 
     if (rooms[roomId].length === 1) {
-      roomDetail[roomId].currentPlayerId = socket.id;
-      socket.emit("identification", { socketId: socket.id});
-      io.to(roomId).emit("waiting", { roomId, socketId: socket.id,  });
-    } 
+      roomDetail[roomId].currentPlayerId = playerId;
+      socket.emit("identification", { socketId: playerId });
+      io.to(roomId).emit("waiting", { roomId, socketId: playerId });
+    }
     if (rooms[roomId].length === 2) {
-      socket.emit("identification", { socketId: socket.id});
+      roomMeta[roomId].started = true;
+      socket.emit("identification", { socketId: playerId });
       createNewGame(roomId);
-      io.to(roomId).emit("ready", { roomId, socketId: socket.id, gameState: roomDetail[roomId] });
+      io.to(roomId).emit("ready", { roomId, socketId: playerId, gameState: roomDetail[roomId] });
     }
   });
 
-  socket.on("playCard", ( gameState : GameState ) => {
-    enqueue(gameState.roomId, async () => {
-      roomDetail[gameState.roomId] = gameState;
-      socket.to(gameState.roomId).emit("opponentPlayed", { gameState });
-    });
-  });
-  
-  socket.on("changePlayers", ( roomId: string , newCurrentPlayer: string) => {
+  // El cliente manda su snapshot, pero el servidor solo toma lo que ese jugador puede modificar:
+  //  - sus propias zonas (mano, mazo, pilas): siempre
+  //  - zonas compartidas (mazo central, escaleras): solo si es el jugador de turno
+  // Asi un mensaje atrasado nunca pisa las cartas del rival.
+  on("playCard", (snapshot: GameState) => {
+    const roomId = snapshot?.roomId;
+    if (!isMember(roomId, playerId)) return;
     enqueue(roomId, async () => {
-      console.log(`Cambiando jugadores en ${roomId}. Nuevo jugador:`, newCurrentPlayer);
-      roomDetail[roomId].currentPlayerId = newCurrentPlayer;
-      socket.to(roomId).emit("newCurrentPlayer", { newCurrentPlayer });
+      const cur = roomDetail[roomId];
+      if (!cur) return;
+      if (snapshot.matchId !== undefined && snapshot.matchId !== cur.matchId) {
+        console.log(`playCard de partida vieja en ${roomId}, resincronizando a ${playerId}`);
+        sendSync(socket, roomId);
+        return;
+      }
+      if (Array.isArray(snapshot.playerHands?.[playerId])) cur.playerHands[playerId] = snapshot.playerHands[playerId];
+      if (Array.isArray(snapshot.playerDecks?.[playerId])) cur.playerDecks[playerId] = snapshot.playerDecks[playerId];
+      const piles = snapshot.playerPiles?.[playerId];
+      if (Array.isArray(piles) && piles.every(Array.isArray)) cur.playerPiles[playerId] = piles;
+
+      if (cur.currentPlayerId === playerId) {
+        if (Array.isArray(snapshot.deck)) cur.deck = snapshot.deck;
+        if (Array.isArray(snapshot.stairs)) cur.stairs = snapshot.stairs;
+      } else if (JSON.stringify(snapshot.stairs) !== JSON.stringify(cur.stairs)) {
+        console.log(`${playerId} intento escribir zonas compartidas fuera de turno en ${roomId}`);
+        sendSync(socket, roomId);
+      }
+      socket.to(roomId).emit("opponentPlayed", { gameState: cur });
     });
   });
 
-  socket.on("displayOpponentName", ( roomId: string , opponentName: string) => {
+  // fromTurn hace idempotente el cambio de turno: un reenvio tras una reconexion no se aplica dos veces.
+  on("changePlayers", (roomId: string, newCurrentPlayer: string, fromTurn?: number) => {
+    if (!isMember(roomId, playerId)) return;
+    enqueue(roomId, async () => {
+      const cur = roomDetail[roomId];
+      if (!cur) return;
+      if (fromTurn !== undefined && cur.turn !== undefined && fromTurn < cur.turn) {
+        console.log(`changePlayers duplicado en ${roomId} (turn ${fromTurn} < ${cur.turn}), ignorado`);
+        return;
+      }
+      if (cur.currentPlayerId !== playerId || !isMember(roomId, newCurrentPlayer) || newCurrentPlayer === playerId) {
+        console.log(`changePlayers invalido en ${roomId} de ${playerId}`);
+        sendSync(socket, roomId);
+        return;
+      }
+      console.log(`Cambiando jugadores en ${roomId}. Nuevo jugador:`, newCurrentPlayer);
+      cur.currentPlayerId = newCurrentPlayer;
+      cur.turn = (cur.turn ?? 0) + 1;
+      socket.to(roomId).emit("newCurrentPlayer", { newCurrentPlayer, turn: cur.turn });
+    });
+  });
+
+  on("displayOpponentName", (roomId: string, opponentName: string) => {
+    if (!isMember(roomId, playerId)) return;
     enqueue(roomId, async () => {
       socket.to(roomId).emit("displayOpponentName", { opponentName: opponentName });
     });
   });
 
-  socket.on("win", ( roomId: string ) => {
-    console.log(`Win recibido en ${roomId} por ${socket.id}`);
+  on("win", (roomId: string) => {
+    if (!isMember(roomId, playerId)) return;
+    console.log(`Win recibido en ${roomId} por ${playerId}`);
     enqueue(roomId, async () => {
+      if (roomMeta[roomId]) roomMeta[roomId].result = { type: "win", winnerId: playerId };
       socket.to(roomId).emit("lose");
     });
   });
-  socket.on("tie", ( roomId: string ) => {
-    console.log(`Tie recibido en ${roomId} por ${socket.id}`);
+  on("tie", (roomId: string) => {
+    if (!isMember(roomId, playerId)) return;
+    console.log(`Tie recibido en ${roomId} por ${playerId}`);
     enqueue(roomId, async () => {
+      if (roomMeta[roomId]) roomMeta[roomId].result = { type: "tie" };
       socket.to(roomId).emit("tie");
     });
   });
 
-  socket.on("rematchAccepted", ( roomId: string ) => {
+  on("rematchAccepted", (roomId: string) => {
+    if (!isMember(roomId, playerId)) return;
     console.log(`rematch accepted and rematch sent`);
     enqueue(roomId, async () => {
+      if (!roomDetail[roomId]) return;
       createNewGame(roomId);
+      if (roomMeta[roomId]) roomMeta[roomId].result = undefined;
       io.to(roomId).emit("rematchAccepted", {gameState: roomDetail[roomId]});
     });
   });
-  socket.on("requestRematch", ( roomId: string ) => {
+  on("requestRematch", (roomId: string) => {
+    if (!isMember(roomId, playerId)) return;
     console.log(`requestRematch`);
     enqueue(roomId, async () => {
       socket.to(roomId).emit("requestRematch");
     });
   });
-  socket.on("getGameState", ( roomId: string ) => {
+  on("getGameState", (roomId: string) => {
+    if (!isMember(roomId, playerId)) return;
     enqueue(roomId, async () => {
-      socket.emit("getGameState", {gameState: roomDetail[roomId]});
+      sendSync(socket, roomId);
     });
   });
-  socket.on("rejoin", ( roomId: string, socketId: string ) => {
-    console.log(`rejoin recibido en ${roomId} por ${socket.id} identificadonse con ${socketId}`);
-    if (socket.id === socketId) {
-      console.log(`el socket ${socket.id} es el mismo`);
-    } else {
-      if (roomDetail[roomId] && Object.keys(roomDetail[roomId]).length > 0) {
-        console.log(`el socket no es el mismo, reconfigurando, mano actual ${roomDetail[roomId].playerHands[socketId]}`);
-        roomDetail[roomId].currentPlayerId = roomDetail[roomId].currentPlayerId === socketId ? socket.id : roomDetail[roomId].currentPlayerId;
-        rooms[roomId] = rooms[roomId].filter(id => id !== socketId);
-        rooms[roomId].push(socket.id);
-        replacePlayerIdKey(roomDetail[roomId].playerHands, socketId, socket.id);
-        console.log(`reconfiguracion completada, mano actual ${roomDetail[roomId].playerHands[socket.id]}`);
-        replacePlayerIdKey(roomDetail[roomId].playerDecks, socketId, socket.id);
-        replacePlayerIdKey(roomDetail[roomId].playerPiles, socketId, socket.id);
-        socket.join(roomId);
-        socket.emit("rejoined", {gameState: roomDetail[roomId] , socketId: socket.id});   
-      }
-      else
-      {
-        console.log(`la sala no existe mas`);
-      }
+
+  // Reconexion: el servidor identifica al jugador por su playerId (auth), no por lo que diga el cliente.
+  on("rejoin", (roomId: string) => {
+    console.log(`rejoin recibido en ${roomId} de ${playerId} (socket ${socket.id})`);
+    if (typeof roomId !== "string" || !isMember(roomId, playerId)) {
+      console.log(`rejoin rechazado: ${playerId} no pertenece a ${roomId}`);
+      socket.emit("rejoinFailed");
+      return;
     }
+    enqueue(roomId, async () => {
+      const cur = roomDetail[roomId];
+      const meta = roomMeta[roomId];
+      if (!cur || !meta || !rooms[roomId]?.includes(playerId)) {
+        socket.emit("rejoinFailed");
+        return;
+      }
+      clearGrace(roomId, playerId);
+      socket.join(roomId);
+      socket.emit("rejoined", { gameState: cur, socketId: playerId });
+      if (meta.result) {
+        if (meta.result.type === "tie") socket.emit("tie");
+        else if (meta.result.winnerId !== playerId) socket.emit("lose");
+      }
+      socket.to(roomId).emit("opponentOnline");
+    });
   });
 
-  socket.on("disconnect", () => {
-    console.log("Cliente desconectado:", socket.id);
-    // limpiar de rooms
-    for (const r in rooms) {
-      const idx = rooms[r].indexOf(socket.id);
-      if (idx !== -1) {
-        rooms[r].splice(idx, 1);
-        console.log(`Removido ${socket.id} de ${r}. Quedan:`, rooms[r]);
-        // si la sala queda vacía podés borrarla
-        if (rooms[r].length === 0) {delete rooms[r]; delete roomDetail[r];}
-        else {
-          // avisar al otro jugador que el rival se desconectó
-          io.to(r).emit("opponentLeft", { roomId: r });
-        }
+  on("disconnect", () => {
+    console.log("Cliente desconectado:", socket.id, "player:", playerId);
+    // si el jugador ya se reconecto con otro socket, este es un residuo
+    if (playerSockets[playerId] !== socket.id) return;
+    delete playerSockets[playerId];
+    const roomId = findRoomOf(playerId);
+    if (!roomId) return;
+    enqueue(roomId, async () => {
+      const meta = roomMeta[roomId];
+      if (!meta || !rooms[roomId]?.includes(playerId)) return;
+      if (playerSockets[playerId]) return; // volvio mientras esperaba en la cola
+      if (!meta.started) {
+        // sala de espera: no hay nada que recuperar
+        removePlayer(roomId, playerId, false);
+        return;
       }
-    }
+      // partida en curso: damos un margen para reconectar antes de darlo por ido
+      io.to(roomId).emit("opponentOffline");
+      clearGrace(roomId, playerId);
+      meta.graceTimers[playerId] = setTimeout(() => {
+        enqueue(roomId, async () => {
+          if (!roomMeta[roomId]) return;
+          delete roomMeta[roomId].graceTimers[playerId];
+          if (playerSockets[playerId]) return;
+          console.log(`Gracia vencida para ${playerId} en ${roomId}`);
+          removePlayer(roomId, playerId, true);
+        });
+      }, GRACE_MS);
+    });
   });
 
-  socket.on("leaveRoom", (roomId) => {
-    if (!rooms[roomId]) return;
-    const idx = rooms[roomId].indexOf(socket.id);
-    if (idx !== -1) {
-      rooms[roomId].splice(idx, 1);
-      console.log(`Removido ${socket.id} de ${roomId}. Quedan:`, rooms[roomId]);
-      if (rooms[roomId].length === 0) {
-        delete rooms[roomId];
-        delete roomDetail[roomId];
-      } else {
-        socket.to(roomId).emit("opponentLeft", { roomId });
-      }
-    }
-    //roomDetail[roomId] = {roomId: roomId, stairs: [[], [], [], [], [], [], [], []], deck: [], playerHands: {}, playerDecks: {}, playerPiles: {} };
+  on("leaveRoom", (roomId: string) => {
+    if (typeof roomId !== "string" || !isMember(roomId, playerId)) return;
     socket.leave(roomId);
+    enqueue(roomId, async () => {
+      removePlayer(roomId, playerId, true);
+    });
   });
 });
 
 httpServer.listen(process.env.PORT || 3000, () => {
   console.log("Servidor escuchando en puerto:", process.env.PORT || 3000);
 });
+
+function findRoomOf(playerId: string): string | undefined {
+  return Object.keys(rooms).find(r => rooms[r].includes(playerId));
+}
+function isMember(roomId: unknown, playerId: string): roomId is string {
+  return typeof roomId === "string" && !!rooms[roomId] && rooms[roomId].includes(playerId);
+}
+function sendSync(socket: Socket, roomId: string) {
+  if (roomDetail[roomId]) socket.emit("stateSync", { gameState: roomDetail[roomId] });
+}
+function clearGrace(roomId: string, playerId: string) {
+  const timers = roomMeta[roomId]?.graceTimers;
+  if (timers && timers[playerId]) {
+    clearTimeout(timers[playerId]);
+    delete timers[playerId];
+  }
+}
+function removePlayer(roomId: string, playerId: string, notifyOpponent: boolean) {
+  const members = rooms[roomId];
+  if (!members) return;
+  const idx = members.indexOf(playerId);
+  if (idx === -1) return;
+  members.splice(idx, 1);
+  clearGrace(roomId, playerId);
+  console.log(`Removido ${playerId} de ${roomId}. Quedan:`, members);
+  if (members.length === 0) {
+    destroyRoom(roomId);
+  } else if (notifyOpponent) {
+    io.to(roomId).emit("opponentLeft", { roomId });
+  }
+}
+function destroyRoom(roomId: string) {
+  Object.keys(roomMeta[roomId]?.graceTimers ?? {}).forEach(pid => clearGrace(roomId, pid));
+  delete rooms[roomId];
+  delete roomDetail[roomId];
+  delete roomMeta[roomId];
+  delete roomQueues[roomId];
+}
 
 function createNewGame(roomId: string) {
   const suits: ('♠' | '♥' | '♦' | '♣')[] = ['♠', '♥', '♦', '♣'];
@@ -190,6 +333,8 @@ function createNewGame(roomId: string) {
   deck.push({ suit: '⚜', value: 'C', numericValue: 0, id: 'C#4', faceUp: false});
   roomDetail[roomId].deck = deck
   deck.sort(() => Math.random() - 0.5);
+  roomDetail[roomId].matchId = (roomDetail[roomId].matchId ?? 0) + 1;
+  roomDetail[roomId].turn = 0;
   dealInitialHands(roomId, deck);
 }
 
@@ -258,10 +403,4 @@ async function processQueue(roomId: string) {
     }
   }
   room.processing = false;
-}
-function replacePlayerIdKey<T>(obj: Record<string, T>, oldId: string, newId: string ): void {
-  if (obj[oldId]) {
-    obj[newId] = obj[oldId]; // copia los datos
-    delete obj[oldId];       // elimina la key vieja
-  }
 }
