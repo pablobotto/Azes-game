@@ -9,7 +9,6 @@ import { GameZone } from "../enum/game-zone.enum";
 import { CurrentPlayerType } from "../enum/player.enum";
 import { BehaviorSubject, Subject } from "rxjs";
 import { GameStep } from "../enum/game-step.enum";
-import { CpuAiService } from "./gameCpu.service";
 import { SocketService } from "./socket.service";
 import { NotificationService } from "./notification.service";
 
@@ -17,7 +16,7 @@ import { NotificationService } from "./notification.service";
 export class GameStepService { 
     tie$ = new Subject<void>();
     currentPlayerId$: typeof this.socketService.currentPlayerId$;
-    constructor(private gameService: GameService, private gameCpu: CpuAiService, private socketService: SocketService, private notificationService: NotificationService) {
+    constructor(private gameService: GameService, private socketService: SocketService, private notificationService: NotificationService) {
         this.currentPlayerId$ = this.socketService.currentPlayerId$;
     }
 
@@ -85,10 +84,6 @@ export class GameStepService {
         if (this.currentPlayerType.getValue() !== playerType) { this.notificationService.show("⚠ No es tu Turno"); return false; }
         if (player !== "non-multiplayer" && this.currentPlayerId$.getValue() !== player) { this.notificationService.show("⚠ No es tu Turno"); return false; }
         if (this.currentStep.getValue() !== GameStep.Playing) {this.notificationService.show(`⚠ Paso incorrecto.`); return false;}
-        if (playerType === CurrentPlayerType.Cpu) {
-            await this.gameCpu.play();
-            this.currentStep.next(GameStep.Discarding);
-        }
         return true;
     }
     // Mismas validaciones que discard(), sin avanzar de paso. Permite enviar el descarte antes de pasar el turno.
@@ -103,9 +98,6 @@ export class GameStepService {
     }
     async discard(playerType: CurrentPlayerType, player: string = "non-multiplayer"): Promise<boolean> {
         if (!this.canDiscard(playerType, player)) return false;
-        if (playerType === CurrentPlayerType.Cpu) {
-            await this.gameCpu.discard();
-        }
         this.currentStep.next(GameStep.Ending);
         return true;
     }
@@ -113,10 +105,5 @@ export class GameStepService {
         if (this.currentStep.getValue() !== GameStep.Ending) { this.notificationService.show(`⚠ Paso incorrecto.`); return;}
         if (player !== "non-multiplayer" && this.currentPlayerId$.getValue() !== player) { this.notificationService.show("⚠ No es tu Turno"); return;}
         this.currentStep.next(GameStep.Finished);
-        if (player === "non-multiplayer") {
-            const nextPlayer = this.currentPlayerType.getValue() === CurrentPlayerType.Player ? CurrentPlayerType.Cpu : CurrentPlayerType.Player;
-            this.currentPlayerType.next(nextPlayer);
-            this.currentStep.next(GameStep.Drawing);
-        }
     }
 }

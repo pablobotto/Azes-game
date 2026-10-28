@@ -1,7 +1,6 @@
 <!-- Inicial -->
 <div class="header-container">
   <input class="name-input" type="text" placeholder="Escribí tu nombre" [(ngModel)]="playerName" [disabled]="joined">
-  <button class="start-button" (click)="startNewSPGame()" [disabled]="true">Vs CPU</button>
   <button class="start-button" (click)="joinRoom()" [disabled]="!isNameValid()">Unirse</button>
   <div *ngIf="(status$ | async) === 'waiting'"> Esperando rival ...</div>
   <div *ngIf="(status$ | async) === 'ready'">
@@ -16,6 +15,7 @@
   <div *ngIf="(socketService.room$ | async) as roomId" class="pill pill-room" (mouseenter)="hoverRoom = true" (mouseleave)="hoverRoom = false"
        (click)="closeMpGame()"> {{ hoverRoom ? 'Salir' : 'Sala: ' + roomId }}
   </div>
+  <span class="version-tag">v{{ version }}</span>
 </div>
 <!-- Tablero Principal -->
 <div class="game-screen">

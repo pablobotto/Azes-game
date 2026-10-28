@@ -8,12 +8,8 @@ import { BehaviorSubject } from 'rxjs';
 
 @Injectable({ providedIn: 'root' })
 export class GameService {
-  private suits: ('♠' | '♥' | '♦' | '♣')[] = ['♠', '♥', '♦', '♣'];
-  private values = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-  private valueMap: Record<string, number> = { 'A': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13 };
   private stairs = new BehaviorSubject<Card[][]>([[], [], [], [], [], [], [], []]);
   stairs$ = this.stairs.asObservable();
-  private decks = ["A", "B"];
 
   deck: Card[] = [];
   playerHand: Card[] = [];
@@ -32,40 +28,6 @@ export class GameService {
   setStairs(newValue: Card[][]) {
     this.stairs.next(newValue);
   }
-  addCardToStair(stairIndex: number, card: Card) {
-    const current = this.getStairs.map(s => [...s]); // copia defensiva
-    current[stairIndex].push(card);
-    this.setStairs(current); // 🔔 dispara el next → UI se refresca
-  }
-
-  // Inicia un nuevo juego
-  async newGame() {
-    this.deck = [];
-    this.playerHand = [];
-    this.opponentHand = [];
-    this.playerPiles = [[], [], []];
-    this.opponentPiles = [[], [], []];
-    this.stairs.next([[], [], [], [], [], [], [], []]);
-    this.playerDeck = [];
-    this.opponentDeck = [];
-
-    this.decks.forEach(deckId => {
-      this.suits.forEach(suit => {
-        this.values.forEach(value => {
-          this.deck.push({
-            suit,
-            value,
-            numericValue: this.valueMap[value],
-            id: `${suit}${value}#${deckId}`,
-            faceUp: false,
-          });
-        });
-      });
-    });
-
-    this.shuffle();
-    this.dealInitialHands();
-  }
   async ResetValues() {
     this.deck = [];
     this.playerHand = [];
@@ -76,11 +38,6 @@ export class GameService {
     this.playerDeck = [];
     this.opponentDeck = [];
   }
-  // Mezcla el mazo
-  async shuffle() {
-    this.deck.sort(() => Math.random() - 0.5);
-  }
-
   async removeStairAndReShufle(stairIndex: number) {
     // Tomar el 50% de abajo del mazo actual
     const cutIndex = Math.floor(this.deck.length / 2);
@@ -97,22 +54,6 @@ export class GameService {
     // Reconstruir el mazo
     this.deck = topHalf.concat(newBottom);
   }
-  // Reparte cartas iniciales
-  async dealInitialHands(initialPlayerHand = 5, initialPlayerDeck = 10) {
-    for (let i = 0; i < initialPlayerHand; i++) {
-      const playerCard = this.drawCard();
-      const opponentCard = this.drawCard();
-      if (playerCard) this.playerHand.push(playerCard);
-      if (opponentCard) this.opponentHand.push(opponentCard);
-    }
-    for (let i = 0; i < initialPlayerDeck; i++) {
-      const playerCard = this.drawCard();
-      const opponentCard = this.drawCard();
-      if (playerCard) this.playerDeck.push(playerCard);
-      if (opponentCard) this.opponentDeck.push(opponentCard);
-    }
-  }
- 
   // Roba una carta del mazo
   drawCard(): Card | null {
     if (this.deck.length === 0) return null;

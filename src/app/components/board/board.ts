@@ -18,6 +18,7 @@ import { NotificationService } from '../../services/notification.service';
 import { FakeCardComponent } from '../fake-card/fake-card';
 import { OpponentLeftModalComponent } from '../opponent-left-modal/opponent-left-modal';
 import { ReconnectModalComponent } from '../internet-connection/internet-connection';
+import pkg from '../../../../package.json';
 
 @Component({
   selector: 'app-board',
@@ -34,6 +35,7 @@ export class BoardComponent implements AfterViewInit {
   opponentName$: typeof this.socketService.opponentName$;
   gameResult$: Observable<string | null>;
 
+  readonly version: string = pkg.version;
   joined = false;
   gameStarted = false;
   playerName: string = '';
@@ -79,16 +81,10 @@ export class BoardComponent implements AfterViewInit {
             await this.sendDisplayOpponentName();
           }
           console.log(`Step actual: ${step}, Jugador actual: ${player}`);
-          if (player === CurrentPlayerType.Cpu) {
-            await this.gameSteps.play(player);
-          }
           this.cd.detectChanges();
           break;
         case GameStep.Discarding:
           console.log(`Step actual: ${step}, Jugador actual: ${player}`);
-          if (player === CurrentPlayerType.Cpu) {
-            await this.gameSteps.discard(player);
-          }
           this.cd.detectChanges();
           break;
         case GameStep.Ending:
@@ -176,10 +172,6 @@ export class BoardComponent implements AfterViewInit {
     await this.gameSteps.resetValues();
     await this.socketService.resetValues();
     this.cd.detectChanges();
-  }
-  async startNewSPGame() {
-    this.game.newGame();
-    this.gameSteps.resetGame();
   }
 
   async onDragEnd(event: any, i: number, j: number) {
