@@ -1,7 +1,8 @@
 # Levanta backend (puerto 3000) y frontend (http://localhost:4200) en dos ventanas.
 # Uso:  .\start-dev.ps1        (o doble click en start-dev.bat)
 #       .\start-dev.ps1 -Stop  (cierra lo que quede escuchando en 3000 y 4200)
-param([switch]$Stop)
+#       .\start-dev.ps1 -Legacy  (backend sin modo autoritativo, como la fase 1)
+param([switch]$Stop, [switch]$Legacy)
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $serverDir = Join-Path $root 'server'
@@ -37,7 +38,7 @@ if (-not (Test-Path (Join-Path $serverDir 'node_modules'))) {
     Push-Location $serverDir; npm install; Pop-Location
 }
 
-Start-Process powershell -WorkingDirectory $serverDir -ArgumentList '-NoExit', '-Command', '$Host.UI.RawUI.WindowTitle = "Azes - Backend :3000"; npm run dev'
+Start-Process powershell -WorkingDirectory $serverDir -ArgumentList '-NoExit', '-Command', ('$Host.UI.RawUI.WindowTitle = "Azes - Backend :3000"; ' + $(if ($Legacy) { '' } else { '$env:AUTHORITATIVE = "1"; ' }) + 'npm run dev')
 Start-Process powershell -WorkingDirectory $root -ArgumentList '-NoExit', '-Command', '$Host.UI.RawUI.WindowTitle = "Azes - Frontend :4200"; npm start'
 
 Write-Host 'Backend:  http://localhost:3000'

@@ -2,9 +2,13 @@ import { createServer } from "http";
 import { Server, Socket } from "socket.io";
 import { Card } from "./card.model";
 import { GameState } from "./gameState.model";
+import { applyAction, GameResult } from "./games/azes/actions";
 
 // Tiempo que se espera a un jugador desconectado antes de darlo por ido.
 const GRACE_MS = 90_000;
+// Interruptor de la fase 2: con AUTHORITATIVE=1 las salas nuevas se juegan con acciones validadas en el servidor.
+// Sin la variable (o con otro valor) todo funciona como en la fase 1. Se lee al crear cada sala.
+const isAuthoritative = () => process.env.AUTHORITATIVE === "1";
 const KNOWN_GAMES = ["azes"];
 
 const httpServer = createServer();
@@ -75,7 +79,7 @@ io.on("connection", (socket) => {
       roomId = `room${++roomCounter}`;
       rooms[roomId] = [];
       roomMeta[roomId] = { gameId: game, started: false, graceTimers: {} };
-      roomDetail[roomId] = { roomId, stairs: [[], [], [], [], [], [], [], []], deck: [], playerHands: {}, playerDecks: {}, playerPiles: {}};
+      roomDetail[roomId] = { roomId, authoritative: isAuthoritative(), stairs: [[], [], [], [], [], [], [], []], deck: [], playerHands: {}, playerDecks: {}, playerPiles: {}};
     }
     // agregar y unirse
     rooms[roomId].push(playerId);
@@ -104,7 +108,7 @@ io.on("connection", (socket) => {
   // Asi un mensaje atrasado nunca pisa las cartas del rival.
   on("playCard", (snapshot: GameState) => {
     const roomId = snapshot?.roomId;
-    if (!isMember(roomId, playerId)) return;
+    if (!isMember(roomId, playerId) || roomDetail[roomId]?.authoritative) return;
     enqueue(roomId, async () => {
       const cur = roomDetail[roomId];
       if (!cur) return;
@@ -129,9 +133,40 @@ io.on("connection", (socket) => {
     });
   });
 
+  // Modo autoritativo: el cliente manda una intencion (draw / play / discard), el servidor la valida con las
+  // reglas, la aplica y difunde el estado nuevo a los dos. Responde por ack { ok } o { error }.
+  on("action", (payload: any, ack?: (res: { ok?: boolean; error?: string }) => void) => {
+    const reply = typeof ack === "function" ? ack : () => {};
+    const roomId = payload?.roomId;
+    if (!isMember(roomId, playerId)) { reply({ error: "bad_action" }); return; }
+    enqueue(roomId, async () => {
+      const cur = roomDetail[roomId];
+      const meta = roomMeta[roomId];
+      if (!cur || !meta || !cur.authoritative) { reply({ error: "bad_action" }); return; }
+      if (payload.matchId !== undefined && payload.matchId !== cur.matchId) {
+        console.log(`action de partida vieja en ${roomId}, resincronizando a ${playerId}`);
+        sendSync(socket, roomId);
+        reply({ error: "stale" });
+        return;
+      }
+      if (meta.result) { reply({ error: "game_over" }); return; }
+      const outcome = applyAction(cur, playerId, payload);
+      if (outcome.error) {
+        console.log(`action rechazada en ${roomId} de ${playerId}: ${outcome.error}`);
+        sendSync(socket, roomId);
+        reply({ error: outcome.error });
+        return;
+      }
+      cur.version = (cur.version ?? 0) + 1;
+      io.to(roomId).emit("state", { gameState: cur });
+      reply({ ok: true });
+      if (outcome.result) finishGame(roomId, socket, outcome.result);
+    });
+  });
+
   // fromTurn hace idempotente el cambio de turno: un reenvio tras una reconexion no se aplica dos veces.
   on("changePlayers", (roomId: string, newCurrentPlayer: string, fromTurn?: number) => {
-    if (!isMember(roomId, playerId)) return;
+    if (!isMember(roomId, playerId) || roomDetail[roomId]?.authoritative) return;
     enqueue(roomId, async () => {
       const cur = roomDetail[roomId];
       if (!cur) return;
@@ -159,7 +194,7 @@ io.on("connection", (socket) => {
   });
 
   on("win", (roomId: string) => {
-    if (!isMember(roomId, playerId)) return;
+    if (!isMember(roomId, playerId) || roomDetail[roomId]?.authoritative) return;
     console.log(`Win recibido en ${roomId} por ${playerId}`);
     enqueue(roomId, async () => {
       if (roomMeta[roomId]) roomMeta[roomId].result = { type: "win", winnerId: playerId };
@@ -167,7 +202,7 @@ io.on("connection", (socket) => {
     });
   });
   on("tie", (roomId: string) => {
-    if (!isMember(roomId, playerId)) return;
+    if (!isMember(roomId, playerId) || roomDetail[roomId]?.authoritative) return;
     console.log(`Tie recibido en ${roomId} por ${playerId}`);
     enqueue(roomId, async () => {
       if (roomMeta[roomId]) roomMeta[roomId].result = { type: "tie" };
@@ -220,6 +255,7 @@ io.on("connection", (socket) => {
       if (meta.result) {
         if (meta.result.type === "tie") socket.emit("tie");
         else if (meta.result.winnerId !== playerId) socket.emit("lose");
+        else if (cur.authoritative) socket.emit("youWon");
       }
       socket.to(roomId).emit("opponentOnline");
     });
@@ -274,6 +310,16 @@ function findRoomOf(playerId: string): string | undefined {
 }
 function isMember(roomId: unknown, playerId: string): roomId is string {
   return typeof roomId === "string" && !!rooms[roomId] && rooms[roomId].includes(playerId);
+}
+// Fin de partida en modo autoritativo: gana quien jugo (youWon) y el rival pierde (lose); el empate le llega a los dos.
+function finishGame(roomId: string, actor: Socket, result: GameResult) {
+  roomMeta[roomId].result = result;
+  if (result.type === "tie") {
+    io.to(roomId).emit("tie");
+    return;
+  }
+  actor.emit("youWon");
+  actor.to(roomId).emit("lose");
 }
 function sendSync(socket: Socket, roomId: string) {
   if (roomDetail[roomId]) socket.emit("stateSync", { gameState: roomDetail[roomId] });
@@ -335,6 +381,9 @@ function createNewGame(roomId: string) {
   deck.sort(() => Math.random() - 0.5);
   roomDetail[roomId].matchId = (roomDetail[roomId].matchId ?? 0) + 1;
   roomDetail[roomId].turn = 0;
+  // en modo autoritativo el que tiene el turno arranca jugando con la mano repartida
+  roomDetail[roomId].phase = "playing";
+  roomDetail[roomId].version = (roomDetail[roomId].version ?? 0) + 1;
   dealInitialHands(roomId, deck);
 }
 

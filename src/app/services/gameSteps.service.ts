@@ -18,6 +18,15 @@ export class GameStepService {
     currentPlayerId$: typeof this.socketService.currentPlayerId$;
     constructor(private gameService: GameService, private socketService: SocketService, private notificationService: NotificationService) {
         this.currentPlayerId$ = this.socketService.currentPlayerId$;
+        // Modo autoritativo: el servidor dice en que paso esta mi turno.
+        this.socketService.phase$.subscribe(phase => {
+            if (phase === 'drawing') {
+                // se vuelve a emitir aunque ya estuviera en Drawing: asi un robo perdido por un corte se reintenta
+                this.currentStep.next(GameStep.Drawing);
+            } else if (phase === 'playing' && this.currentStep.getValue() !== GameStep.Playing) {
+                this.currentStep.next(GameStep.Playing);
+            }
+        });
     }
 
     //OBSERVABLE PARA EL TURNO ACTUAL
@@ -54,6 +63,13 @@ export class GameStepService {
         if (this.currentPlayerType.getValue() !== playerType) { this.notificationService.show("⚠ No es tu Turno"); return; }
         if (this.currentStep.getValue() !== GameStep.Drawing) { this.notificationService.show(`⚠ Paso incorrecto.`); return;}
         if (player !== "non-multiplayer" && this.currentPlayerId$.getValue() !== player) { this.notificationService.show("⚠ No es tu Turno"); return; }
+        if (this.socketService.authoritative) {
+            // El servidor roba, resuelve las escaleras completas y detecta el empate; el estado vuelve por `state`.
+            const res = await this.socketService.sendAction({ type: 'draw' });
+            // el servidor ya resincroniza solo cuando rechaza; si no contesto pedimos el estado nosotros
+            if (res.error === 'timeout') this.socketService.checkSync();
+            return;
+        }
         var hand = this.currentPlayerType.getValue() === CurrentPlayerType.Player ? this.gameService.getHandPlCount() : this.gameService.getHandOpCount();
         for (const [i, stair] of this.gameService.getStairs.entries()) {
             if (stair.length === 13 && (stair[stair.length - 1].value === 'K' || stair[stair.length - 1].value === 'C')) {

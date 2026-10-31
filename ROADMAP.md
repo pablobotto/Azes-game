@@ -3,6 +3,18 @@
 Documento de trabajo con el resultado del análisis de bugs, lo ya corregido en la fase 1 (rama `feature/inprovments`) y lo que sigue.
 Restricción de base: **no se cambian las reglas del juego**. Cuando se mueva código se mueve tal cual, nunca se reescribe.
 
+## Estado actual (v1.1.0)
+
+| Etapa | Estado |
+|---|---|
+| Fase 1 – conectividad y reconexión | Mergeada a `main` y desplegada (front en Vercel, back en Render). Prueba manual de partida completa OK; **cortes de conexión aún sin probar en producción**. |
+| URL del backend por entorno | Hecho (`environment.ts` / `environment.prod.ts` + `fileReplacements`). |
+| Fix de build del backend en Render | Hecho (`skipLibCheck` en `server/tsconfig.json`). |
+| Versión visible junto a la sala | Hecho (se toma de `package.json`). |
+| Modo Vs CPU y su lógica | Eliminado. |
+| Fase 2 – servidor autoritativo | En curso. (a) reglas en `server/games/azes/rules.ts`. (b) hecho: acciones `draw`/`play`/`discard` en `server/games/azes/actions.ts`, detrás del interruptor `AUTHORITATIVE=1` (variable de entorno del servidor; sin ella todo funciona como en la fase 1). Pruebas: `cd server; npm test` (35). `start-dev` lo activa por defecto (`-Legacy` lo apaga). Siguen (c) a (e), ver sección 5. |
+| Fase 3 – varios juegos | Pendiente (ver sección 6). |
+
 ## Levantar el proyecto
 
 ```
@@ -52,7 +64,7 @@ Prueba de humo ya hecha contra el servidor real: snapshot malo no pisa al rival,
 - [ ] Cortar a quien está en "Esperando rival…" y volver.
 - [ ] Ganar / empatar mientras el rival está offline y que reciba el resultado al volver.
 - [ ] Revancha.
-- [ ] Verificar siempre: nadie pierde ni duplica cartas (suman 112 entre mazo, manos, mazos de jugador, pilas y escaleras).
+- [ ] Verificar siempre: nadie pierde ni duplica cartas (suman 108 entre mazo, manos, mazos de jugador, pilas y escaleras).
 - [ ] Botón de sincronizar (hoy comentado en `board.html`): reactivarlo y comprobar que corrige un desfase.
 
 ## 4. Bugs y deudas que siguen abiertos
@@ -63,7 +75,6 @@ Prueba de humo ya hecha contra el servidor real: snapshot malo no pisa al rival,
 | Media | Información oculta | Ambos clientes reciben el estado completo (mano del rival y mazo central). Se puede hacer trampa mirando la red. Se cierra en la fase 2. |
 | Media | Rematch | `rematchAccepted` reparte de nuevo pero no resetea `currentPlayerId` ni los pasos del cliente; hereda turno y paso de la partida anterior. Decidir si es intencional. |
 | Media | Revancha perdida | `requestRematch` no se reenvía si el rival estaba offline. |
-| Media | Single player | `updateReShufle` y `playCard` ya están protegidos, pero el modo "Vs CPU" está deshabilitado en la UI y no se probó. |
 | Baja | `ngOnDestroy` | Hace `socket.disconnect()` sobre un singleton y nunca reconecta. |
 | Baja | Reglas | `canPlaceOnStair` muta `numericValue` del comodín; la IA lo usa en simulaciones con rollback y deja valores residuales. |
 | Baja | Nombre del rival | Si se recarga la página se pierde el nombre del rival (solo vive en el cliente). |
@@ -75,10 +86,10 @@ Prueba de humo ya hecha contra el servidor real: snapshot malo no pisa al rival,
 Objetivo: que sea **imposible** perder una carta, aunque el cliente falle.
 
 1. **Acciones en vez de snapshots.** El cliente envía intenciones (`play {cardId, stairIdx}`, `discard {cardId, pileIdx}`, `endTurn`). El servidor valida turno, paso, posesión de la carta y reglas, aplica y difunde el resultado.
-2. **Reglas en un módulo compartido** (cliente y servidor usan el mismo código), copiando `GameRulesService` y el flujo de `GameStepService` sin modificar su lógica.
+2. **Reglas solo en el servidor** (`server/games/azes/`), copiando `GameRulesService` y el flujo de `GameStepService` sin modificar su lógica. El cliente manda la acción y el servidor responde ok / no permitido; no hace falta compartir código. Si más adelante molesta la latencia del aviso, se agrega una validación rápida solo visual en el cliente.
 3. **Robo en el servidor.** Al empezar el turno el servidor roba hasta 5 y resuelve el reshuffle de escaleras completas (13 cartas terminadas en K o comodín). Desaparece el bucle con `await` del cliente.
 4. **Estado versionado.** Cada cambio incrementa `version`. El cliente ignora versiones viejas y pide `resync` si detecta un hueco.
-5. **Invariante anti-pérdida.** Tras cada acción, el servidor comprueba que haya 112 cartas sin ids repetidos. Si no, rechaza la acción y lo registra: una carta perdida pasa a ser un error visible.
+5. **Invariante anti-pérdida.** Tras cada acción, el servidor comprueba que haya 108 cartas (2 mazos de 52 + 4 comodines) sin ids repetidos. Si no, rechaza la acción y lo registra: una carta perdida pasa a ser un error visible.
 6. **Vista por jugador.** Al rival solo se le manda la cantidad de cartas en mano y la carta superior de su mazo. El mazo central se manda como cantidad.
 7. **Persistencia de sesión.** `playerId` en `sessionStorage` + restauración del tablero → sobrevive al refresh.
 8. **Pruebas.** Casos de caracterización del comportamiento actual (jugadas válidas/ inválidas, comodín, reshuffle, victoria, empate) que deben pasar idénticos antes y después de mover las reglas. Más una simulación de corte/reconexión en cada paso del turno.
@@ -118,6 +129,8 @@ Prerrequisito: la fase 2, porque un `GameModule` con `applyAction` es lo que hac
 
 ## 7. Pendientes de proceso
 
-- Merge de `feature/inprovments` a `main` cuando termine la prueba manual. Las ramas viejas (`alerts`, `suscriptions`, `sync`, `two-players`) ya se borraron en local y en origen; solo queda `main`.
-- Actualizar `main` local (estaba 35 commits atrás de `origin/main`).
-- Volver la URL del backend a producción antes de publicar.
+- ~~Merge de `feature/inprovments` a `main`~~ hecho. Las ramas viejas ya se borraron en local y en origen.
+- ~~URL del backend por entorno~~ hecho.
+- Subir el tag de la version actual: `git push origin v1.1.0` (hoy solo existe en local).
+- Probar en producción los cortes de conexión (modo avión durante turno, robo, descarte y turno del rival).
+- Sacar `server/node_modules` del repositorio (está versionado) y agregarlo al `.gitignore`.

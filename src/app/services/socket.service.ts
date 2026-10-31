@@ -6,7 +6,14 @@ import { environment } from '../../enviroments/environment';
 
 // Cuanto espera el cliente la respuesta del servidor a un rejoin antes de rendirse.
 const REJOIN_TIMEOUT_MS = 20000;
+// Cuanto espera el cliente la respuesta a una accion antes de darla por perdida.
+const ACTION_TIMEOUT_MS = 8000;
 type StateMode = 'full' | 'opponent' | 'rejoin';
+export type GameAction =
+  | { type: 'draw' }
+  | { type: 'play'; cardId: string; stairIdx: number }
+  | { type: 'discard'; cardId: string; pileIdx: number };
+export interface ActionResult { ok?: boolean; error?: string }
 
 @Injectable({ providedIn: 'root' })
 export class SocketService {
@@ -24,6 +31,13 @@ export class SocketService {
   rejoinFailed$ = new Subject<void>();
   opponentOffline$ = new BehaviorSubject<boolean>(false);
   private rejoinTimeout: any = null;
+
+  // Modo autoritativo (fase 2): el servidor valida y aplica las acciones; el cliente solo las pide y muestra el estado.
+  authoritative = false;
+  // Paso que el servidor indica para mi turno (null si no es mi turno).
+  phase$ = new BehaviorSubject<'drawing' | 'playing' | null>(null);
+  won$ = new Subject<void>();
+  private pendingActions = new Set<(res: ActionResult) => void>();
 
   public currentPlayerId$ = new BehaviorSubject<string>("non-multiplayer");
   public opponentName$ = new BehaviorSubject<string>("Oponente");
@@ -52,7 +66,14 @@ export class SocketService {
       this.room$.next(data.gameState.roomId);
       this.gameStatus.next("ready");
       this.currentPlayerId$.next(data.gameState.currentPlayerId);
-      this.updateGameState(data.gameState, 'full');
+      this.applyServerState(data.gameState);
+    });
+    // Modo autoritativo: el servidor difunde el estado completo despues de cada accion.
+    this.socket.on("state", (data) => {
+      this.applyServerState(data.gameState);
+    });
+    this.socket.on("youWon", () => {
+      this.won$.next();
     });
     this.socket.on("opponentPlayed", (data) => {
       this.updateGameState(data.gameState, 'opponent');
@@ -76,19 +97,20 @@ export class SocketService {
     });
     this.socket.on("rematchAccepted", (data) => {
       this.gameService.gameResult$.next(null)
-      this.updateGameState(data.gameState, 'full');
+      this.applyServerState(data.gameState);
     });
     this.socket.on("requestRematch", (data) => {
       this.rivalRequestedRematch = true;
     });
     // Resincronizacion pedida (boton) o corregida por el servidor: manda el servidor.
     this.socket.on("stateSync", (data) => {
-      this.updateGameState(data.gameState, 'full');
+      this.applyServerState(data.gameState);
     });
     this.socket.on("rejoined", (data) => {
       this.clearRejoinTimeout();
       this.socketId = data.socketId;
-      this.handleRejoined(data.gameState);
+      if (data.gameState.authoritative) this.applyServerState(data.gameState);
+      else this.handleRejoined(data.gameState);
       this.internetConnectionOn$.next();
     });
     this.socket.on("rejoinFailed", () => {
@@ -127,6 +149,9 @@ export class SocketService {
     this.socket.on("disconnect", (reason) => {
       console.warn("Se desconectó:", reason);
       this.clearRejoinTimeout();
+      // las acciones en vuelo no van a recibir respuesta: liberar a quien las espera
+      this.pendingActions.forEach(resolve => resolve({ error: 'offline' }));
+      this.pendingActions.clear();
       // un disconnect() voluntario no es una caida de internet
       if (reason !== 'io client disconnect') {
         this.internetConnectionLost$.next();
@@ -200,6 +225,39 @@ export class SocketService {
   }
   async checkSync() {
     this.socket.emit('getGameState', this.gameServerData.roomId);
+  }
+
+  // Pide una accion al servidor y espera su respuesta (ok / error). Nunca rechaza: los fallos de red vuelven como error.
+  sendAction(action: GameAction): Promise<ActionResult> {
+    const roomId = this.gameServerData?.roomId;
+    if (!roomId || !this.socket.connected) return Promise.resolve({ error: 'offline' });
+    return new Promise<ActionResult>(resolve => {
+      const finish = (res: ActionResult) => {
+        clearTimeout(timer);
+        this.pendingActions.delete(finish);
+        resolve(res ?? {});
+      };
+      const timer = setTimeout(() => finish({ error: 'timeout' }), ACTION_TIMEOUT_MS);
+      this.pendingActions.add(finish);
+      this.socket.emit('action', { ...action, roomId, matchId: this.gameServerData.matchId }, finish);
+    });
+  }
+
+  // Estado que manda el servidor. En modo autoritativo es la unica fuente de verdad: se reemplaza todo
+  // (salvo que llegue uno mas viejo que el que ya tengo) y el paso del turno sale de `phase`.
+  private applyServerState(gameState: any) {
+    if (!gameState?.authoritative) {
+      this.authoritative = false;
+      this.updateGameState(gameState, 'full');
+      return;
+    }
+    const prev = this.gameServerData;
+    if (prev?.matchId === gameState.matchId && typeof prev.version === 'number' && gameState.version < prev.version) return;
+    this.authoritative = true;
+    this.room$.next(gameState.roomId);
+    this.updateGameState(gameState, 'full');
+    this.currentPlayerId$.next(gameState.currentPlayerId);
+    this.phase$.next(gameState.currentPlayerId === this.socketId ? (gameState.phase ?? null) : null);
   }
 
   // Tras reconectar: cada lado conserva lo que solo el puede haber cambiado.
@@ -281,5 +339,7 @@ export class SocketService {
     this.room$.next("");
     this.gameStatus.next("idle"); // idle | waiting | ready | full
     this.opponentOffline$.next(false);
+    this.authoritative = false;
+    this.phase$.next(null);
   }
 }

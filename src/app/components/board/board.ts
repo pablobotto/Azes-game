@@ -112,6 +112,10 @@ export class BoardComponent implements AfterViewInit {
     this.socketService.startTurn$.subscribe(async () => {
       await this.startNewMPTurn();
     });
+    // modo autoritativo: el servidor avisa que gane (el rival recibe "lose" como siempre)
+    this.socketService.won$.subscribe(() => {
+      this.game.gameResult$.next(this.playerName);
+    });
     this.socketService.disconnect$.subscribe(async () => {
       this.showOpponentLeftModal.next(true)
       this.cd.detectChanges();
@@ -179,7 +183,36 @@ export class BoardComponent implements AfterViewInit {
     setTimeout(() => this.cd.detectChanges(), 0);
   }
 
+  private static readonly actionErrors: Record<string, string> = {
+    not_your_turn: '⚠ No es tu Turno',
+    wrong_step: '⚠ Paso incorrecto.',
+    illegal_move: '⚠ Movimiento No Permitido',
+    ace_first: '⚠ Juega Primero el As',
+    offline: '⚠ Sin conexión, intentá de nuevo',
+    timeout: '⚠ El servidor no respondió, intentá de nuevo',
+  };
+
+  // Modo autoritativo: no se mueve nada localmente. Se pide la accion y el estado vuelve del servidor.
+  private async dropAuthoritative(event: CdkDragDrop<Card[]>) {
+    const card: Card = event.previousContainer.data[event.previousIndex];
+    const targetId = event.container.id;
+    let res;
+    if (targetId.startsWith('stair')) {
+      if (!await this.gameSteps.play(this.Player.Player, this.socketService.socketId)) return;
+      res = await this.socketService.sendAction({ type: 'play', cardId: card.id, stairIdx: Number(targetId.slice('stair'.length)) - 1 });
+    } else {
+      if (!this.gameSteps.canDiscard(CurrentPlayerType.Player, this.socketService.socketId)) return;
+      res = await this.socketService.sendAction({ type: 'discard', cardId: card.id, pileIdx: Number(targetId.slice('pile'.length)) });
+    }
+    if (res.error) this.notificationService.show(BoardComponent.actionErrors[res.error] ?? '⚠ Movimiento No Permitido');
+  }
+
   async drop(event: CdkDragDrop<Card[]>) {
+    if (event.previousContainer !== event.container && this.socketService.authoritative) {
+      await this.dropAuthoritative(event);
+      this.cd.detectChanges();
+      return;
+    }
     if (event.previousContainer === event.container) {this.cd.detectChanges();} else {
       if (event.container.id.startsWith('stair')) {
         if (await this.gameSteps.play(this.Player.Player, this.socketService.socketId)) { 
