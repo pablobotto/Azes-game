@@ -1,16 +1,14 @@
 import { createServer } from "http";
 import { Server, Socket } from "socket.io";
-import { Card } from "./card.model";
 import { GameState } from "./gameState.model";
-import { applyAction, GameResult } from "./games/azes/actions";
-import { checkInvariant, viewFor } from "./games/azes/view";
+import { GameResult } from "./games/types";
+import { DEFAULT_GAME, GAMES, isKnownGame } from "./games/registry";
 
 // Tiempo que se espera a un jugador desconectado antes de darlo por ido.
 const GRACE_MS = 90_000;
 // Interruptor de la fase 2: las salas nuevas se juegan con acciones validadas en el servidor.
 // Para volver al modo de la fase 1 sin tocar el codigo: AUTHORITATIVE=0 en el entorno. Se lee al crear cada sala.
 const isAuthoritative = () => process.env.AUTHORITATIVE !== "0";
-const KNOWN_GAMES = ["azes"];
 
 const httpServer = createServer();
 const io = new Server(httpServer, {
@@ -66,7 +64,7 @@ io.on("connection", (socket) => {
   };
 
   on("joinRoom", (gameId?: string) => {
-    const game = typeof gameId === "string" && KNOWN_GAMES.includes(gameId) ? gameId : "azes";
+    const game = isKnownGame(gameId) ? gameId : DEFAULT_GAME;
     console.log(`joinRoom pedido por ${playerId} (${game})`);
     // revisar si ya está en una sala
     const currentRoom = findRoomOf(playerId);
@@ -82,13 +80,11 @@ io.on("connection", (socket) => {
       roomId = `room${++roomCounter}`;
       rooms[roomId] = [];
       roomMeta[roomId] = { gameId: game, started: false, graceTimers: {}, names: {} };
-      roomDetail[roomId] = { roomId, authoritative: isAuthoritative(), stairs: [[], [], [], [], [], [], [], []], deck: [], playerHands: {}, playerDecks: {}, playerPiles: {}};
+      roomDetail[roomId] = { ...GAMES[game].emptyState(roomId), authoritative: isAuthoritative() };
     }
     // agregar y unirse
     rooms[roomId].push(playerId);
-    roomDetail[roomId].playerDecks = { ...roomDetail[roomId].playerDecks, [playerId]: [] };
-    roomDetail[roomId].playerHands = { ...roomDetail[roomId].playerHands, [playerId]: [] };
-    roomDetail[roomId].playerPiles = { ...roomDetail[roomId].playerPiles, [playerId]: [[],[],[]]};
+    GAMES[game].addPlayer(roomDetail[roomId], playerId);
     socket.join(roomId);
     console.log(`Sala ${roomId} ahora tiene:`, rooms[roomId]);
 
@@ -155,8 +151,9 @@ io.on("connection", (socket) => {
       if (meta.result) { reply({ error: "game_over" }); return; }
       // copia para deshacer la accion si dejara el estado sin las 108 cartas
       const backup = JSON.parse(JSON.stringify(cur));
-      const outcome = applyAction(cur, playerId, payload);
-      const broken = outcome.error ? null : checkInvariant(cur);
+      const game = gameOf(roomId);
+      const outcome = game.applyAction(cur, playerId, payload);
+      const broken = outcome.error ? null : game.checkInvariant(cur);
       if (broken) {
         console.error(`INVARIANTE ROTO en ${roomId} tras ${JSON.stringify(payload)}: ${broken}. Accion deshecha.`);
         Object.assign(cur, backup);
@@ -311,8 +308,10 @@ io.on("connection", (socket) => {
     });
   });
 
-  on("leaveRoom", (roomId: string) => {
-    if (typeof roomId !== "string" || !isMember(roomId, playerId)) return;
+  // En la sala de espera el cliente todavia no conoce el id de la sala: se la busca por jugador.
+  on("leaveRoom", (requested?: string) => {
+    const roomId = isMember(requested, playerId) ? requested : findRoomOf(playerId);
+    if (!roomId) return;
     socket.leave(roomId);
     enqueue(roomId, async () => {
       removePlayer(roomId, playerId, true);
@@ -340,10 +339,13 @@ function finishGame(roomId: string, actor: Socket, result: GameResult) {
   actor.emit("youWon");
   actor.to(roomId).emit("lose");
 }
+function gameOf(roomId: string) {
+  return GAMES[roomMeta[roomId]?.gameId ?? DEFAULT_GAME];
+}
 // En modo autoritativo cada jugador recibe su vista (sin la mano del rival ni el mazo central).
 function stateFor(roomId: string, forPlayerId: string): GameState {
   const state = roomDetail[roomId];
-  return state.authoritative ? viewFor(state, forPlayerId) : state;
+  return state.authoritative ? gameOf(roomId).viewFor(state, forPlayerId) : state;
 }
 function sendToRoom(roomId: string, event: string, extra: object = {}) {
   for (const pid of rooms[roomId] ?? []) {
@@ -385,76 +387,13 @@ function destroyRoom(roomId: string) {
   delete roomQueues[roomId];
 }
 
+// Inicio y revancha: el juego reparte; la infraestructura lleva la cuenta de partidas, turnos y versiones.
 function createNewGame(roomId: string) {
-  const suits: ('♠' | '♥' | '♦' | '♣')[] = ['♠', '♥', '♦', '♣'];
-  const values = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-  const valueMap: Record<string, number> = { 'A': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13 };
-  const decks = ["A", "B"];
-  let deck: Card[] = [];
-
-  decks.forEach(deckId => {
-    suits.forEach(suit => {
-      values.forEach(value => {
-        deck.push({
-          suit,
-          value,
-          numericValue: valueMap[value],
-          id: `${suit}${value}#${deckId}`,
-          faceUp: false,
-        });
-      });
-    });
-  });
-  deck.push({ suit: '⚜', value: 'C', numericValue: 0, id: 'C#1', faceUp: false});
-  deck.push({ suit: '⚜', value: 'C', numericValue: 0, id: 'C#2', faceUp: false});
-  deck.push({ suit: '⚜', value: 'C', numericValue: 0, id: 'C#3', faceUp: false});
-  deck.push({ suit: '⚜', value: 'C', numericValue: 0, id: 'C#4', faceUp: false});
-  roomDetail[roomId].deck = deck
-  deck.sort(() => Math.random() - 0.5);
-  roomDetail[roomId].matchId = (roomDetail[roomId].matchId ?? 0) + 1;
-  roomDetail[roomId].turn = 0;
-  // en modo autoritativo el que tiene el turno arranca jugando con la mano repartida
-  roomDetail[roomId].phase = "playing";
-  roomDetail[roomId].version = (roomDetail[roomId].version ?? 0) + 1;
-  dealInitialHands(roomId, deck);
-}
-
-function dealInitialHands(roomId: string, deck: Card[], initialPlayerHand = 5, initialPlayerDeck = 10) {
-  const players = Object.keys(roomDetail[roomId].playerHands);
-  console.log(players);
-  if (players.length < 2) return;
-
-  const player1Id = players[0];
-  const player2Id = players[1];
-
-  roomDetail[roomId].playerHands[player1Id] = [];
-  roomDetail[roomId].playerHands[player2Id] = [];
-  roomDetail[roomId].playerPiles[player1Id] = [[],[],[]];
-  roomDetail[roomId].playerPiles[player2Id] = [[],[],[]];
-  roomDetail[roomId].playerDecks[player1Id] = [];
-  roomDetail[roomId].playerDecks[player2Id] = [];
-  roomDetail[roomId].stairs = [[], [], [], [], [], [], [], []];
-
-  for (let i = 0; i < initialPlayerHand; i++) {
-    Object.keys(roomDetail[roomId].playerHands).forEach((playerId) => {
-      const playerCard = drawCard(deck);
-      if (playerCard) roomDetail[roomId].playerHands[playerId].push(playerCard);
-    });
-  }
-  for (let i = 0; i < initialPlayerDeck; i++) {
-    Object.keys(roomDetail[roomId].playerDecks).forEach((playerId) => {
-      const playerCard = drawCard(deck);
-      if (playerCard) roomDetail[roomId].playerDecks[playerId].push(playerCard);
-    });
-  }
-}
-
-// Roba una carta del mazo
-function drawCard(deck: Card[]): Card | null {
-  if (deck.length === 0) return null;
-    const card = deck.pop()!;
-    card.faceUp = true;
-    return card;
+  const state = roomDetail[roomId];
+  gameOf(roomId).startMatch(state);
+  state.matchId = (state.matchId ?? 0) + 1;
+  state.turn = 0;
+  state.version = (state.version ?? 0) + 1;
 }
 
 //Queeueing system to process socket events sequentially per room

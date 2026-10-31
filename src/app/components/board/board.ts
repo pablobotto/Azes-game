@@ -19,6 +19,7 @@ import { FakeCardComponent } from '../fake-card/fake-card';
 import { OpponentLeftModalComponent } from '../opponent-left-modal/opponent-left-modal';
 import { ReconnectModalComponent } from '../internet-connection/internet-connection';
 import pkg from '../../../../package.json';
+import { DEFAULT_GAME_ID, GAMES, isPlayableGame } from '../../games/game-registry';
 
 @Component({
   selector: 'app-board',
@@ -36,6 +37,8 @@ export class BoardComponent implements AfterViewInit {
   gameResult$: Observable<string | null>;
 
   readonly version: string = pkg.version;
+  readonly games = GAMES;
+  selectedGame: string = DEFAULT_GAME_ID;
   joined = false;
   gameStarted = false;
   playerName: string = '';
@@ -71,6 +74,7 @@ export class BoardComponent implements AfterViewInit {
     // recarga de pestaña con una partida abierta: volver a mostrar el nombre y esperar que el servidor devuelva la partida
     if (this.socketService.restoring) {
       this.playerName = this.socketService.savedName;
+      if (isPlayableGame(this.socketService.savedGameId)) this.selectedGame = this.socketService.savedGameId;
       this.joined = true;
     }
     combineLatest([this.gameSteps.currentStep$, this.gameSteps.currentPlayerType$
@@ -154,7 +158,7 @@ export class BoardComponent implements AfterViewInit {
 
   async joinRoom() {
     this.socketService.setPlayerName(this.playerName);
-    await this.socketService.joinRoom();
+    await this.socketService.joinRoom(this.selectedGame);
     this.joined = true;
   }
   async playInStairMultiplayer() {

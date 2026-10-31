@@ -35,6 +35,20 @@
   margin-block-end: 0.25em;
 }
 
+.game-select {
+  padding: 2px 2px;
+  border-radius: 6px;
+  font-size: 13px;
+  width: 82px;
+  margin-block-start: 0.25em;
+  margin-block-end: 0.25em;
+  background: white;
+}
+.game-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .name-input::placeholder {
   color: #aaa;
 }

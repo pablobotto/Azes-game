@@ -68,6 +68,8 @@ export class SocketService {
       this.socketId = data.socketId;
     });
     this.socket.on("waiting", (data) => {
+      // con el id de sala ya se muestra la etiqueta "Sala: ..." (y su Salir) mientras se espera al rival
+      if (data?.roomId) this.room$.next(data.roomId);
       this.gameStatus.next("waiting");
     });
     this.socket.on("ready", (data) => {
@@ -197,6 +199,7 @@ export class SocketService {
     this.clearSession();
   }
   get savedName(): string { return this.session?.name ?? ''; }
+  get savedGameId(): string { return this.session?.gameId ?? ''; }
   setPlayerName(name: string) { this.saveSession({ name }); }
 
   private static storage(): Storage | null {

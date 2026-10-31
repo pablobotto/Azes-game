@@ -3,7 +3,7 @@
 Documento de trabajo con el resultado del análisis de bugs, lo ya corregido en la fase 1 (rama `feature/inprovments`) y lo que sigue.
 Restricción de base: **no se cambian las reglas del juego**. Cuando se mueva código se mueve tal cual, nunca se reescribe.
 
-## Estado actual (v1.3.0)
+## Estado actual (v1.3.1)
 
 | Etapa | Estado |
 |---|---|
@@ -13,7 +13,7 @@ Restricción de base: **no se cambian las reglas del juego**. Cuando se mueva c�
 | Versión visible junto a la sala | Hecho (se toma de `package.json`). |
 | Modo Vs CPU y su lógica | Eliminado. |
 | Fase 2 – servidor autoritativo | En curso. (a) reglas en `server/games/azes/rules.ts`. (b) hecho: acciones `draw`/`play`/`discard` en `server/games/azes/actions.ts`, con el interruptor `AUTHORITATIVE` (variable de entorno del servidor): **encendido por defecto**; con `AUTHORITATIVE=0` vuelve al modo de la fase 1 sin tocar código. `start-dev -Legacy` también lo apaga. Revancha probada local OK; reconexiones se prueban en producción. (c) hecho: estado con `version` y chequeo de las 108 cartas tras cada acción (si falla, se deshace y se registra `INVARIANTE ROTO`). (d) hecho: cada jugador recibe su vista (`server/games/azes/view.ts`): sin la mano del rival ni el mazo central. Pruebas: `cd server; npm test` (42). Persistencia ante refresh hecha (v1.3.0): el `playerId`, la sala y el nombre viven en `sessionStorage` (una por pestaña) y al recargar se vuelve a la partida con `rejoin`; el servidor devuelve el nombre del rival. Falta solo (e), ver sección 5. |
-| Fase 3 – varios juegos | Pendiente (ver sección 6). |
+| Fase 3 – varios juegos | En curso. Parte de servidor hecha: interfaz `GameModule` (`server/games/types.ts`), registro (`server/games/registry.ts`) y Azes como módulo (`server/games/azes/`); `server.ts` ya no tiene reglas ni reparto de Azes adentro. Cliente: desplegable de juegos en la barra superior hecho (v1.3.1, `src/app/games/game-registry.ts`; Azes por defecto, Chinchón figura como próximamente y desactivado; se bloquea al unirse). Falta el registro con carga diferida de pantallas, `SocketService` genérico, tablero a `games/azes/`) y generalizar el tipo de estado al retirar el modo viejo. Ver sección 6. |
 | Panel de admin (solo lectura) | Pendiente (ver sección 7). |
 
 ## Levantar el proyecto

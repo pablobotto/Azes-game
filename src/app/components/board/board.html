@@ -1,7 +1,10 @@
 <!-- Inicial -->
 <div class="header-container">
   <input class="name-input" type="text" placeholder="Escribí tu nombre" [(ngModel)]="playerName" [disabled]="joined">
-  <button class="start-button" (click)="joinRoom()" [disabled]="!isNameValid()">Unirse</button>
+  <button *ngIf="!joined" class="start-button" (click)="joinRoom()" [disabled]="!isNameValid()">Unirse</button>
+  <select *ngIf="!joined" class="game-select" [(ngModel)]="selectedGame" aria-label="Juego">
+    <option *ngFor="let g of games" [value]="g.id" [disabled]="!g.available">{{ g.name }}</option>
+  </select>
   <div *ngIf="(status$ | async) === 'waiting'"> Esperando rival ...</div>
   <div *ngIf="(status$ | async) === 'ready'">
     <h2 *ngIf="(currentPlayerId$ | async) === socketService.socketId" class="pill pill-green">
