@@ -15,11 +15,19 @@ export type GameAction =
   | { type: 'discard'; cardId: string; pileIdx: number };
 export interface ActionResult { ok?: boolean; error?: string }
 
+// Lo que sobrevive a recargar la pestaña (sessionStorage: una por pestaña, asi se puede jugar de a dos en el mismo navegador).
+const KEY_ID = 'azes.playerId';
+const KEY_SESSION = 'azes.session';
+interface SavedSession { roomId?: string; gameId: string; name: string }
+
 @Injectable({ providedIn: 'root' })
 export class SocketService {
   private socket: Socket;
   // Identidad estable del jugador (la genera el cliente y el servidor la usa como id). No cambia al reconectar.
-  private readonly playerId: string = SocketService.newPlayerId();
+  private readonly playerId: string = SocketService.loadPlayerId();
+  private session: SavedSession | null = SocketService.loadSession();
+  // true mientras se vuelve a una partida despues de recargar la pestaña (hasta que el servidor contesta)
+  restoring: boolean = !!this.session?.roomId;
   public socketId: string = "non-multiplayer";
   private gameServerData: any
   private rivalRequestedRematch = false;
@@ -63,6 +71,7 @@ export class SocketService {
       this.gameStatus.next("waiting");
     });
     this.socket.on("ready", (data) => {
+      this.saveSession({ roomId: data.gameState.roomId, gameId: this.lastGameId });
       this.room$.next(data.gameState.roomId);
       this.gameStatus.next("ready");
       this.currentPlayerId$.next(data.gameState.currentPlayerId);
@@ -109,12 +118,20 @@ export class SocketService {
     this.socket.on("rejoined", (data) => {
       this.clearRejoinTimeout();
       this.socketId = data.socketId;
+      if (this.restoring) {
+        // recarga de pestaña: reconstruir la pantalla de partida con lo que dice el servidor
+        this.restoring = false;
+        this.lastGameId = this.session?.gameId ?? this.lastGameId;
+        this.room$.next(data.gameState.roomId);
+        this.gameStatus.next('ready');
+      }
       if (data.gameState.authoritative) this.applyServerState(data.gameState);
       else this.handleRejoined(data.gameState);
       this.internetConnectionOn$.next();
     });
     this.socket.on("rejoinFailed", () => {
       this.clearRejoinTimeout();
+      this.abandonRestore();
       this.rejoinFailed$.next();
     });
     this.socket.on("opponentOffline", () => {
@@ -130,14 +147,11 @@ export class SocketService {
     });
     this.socket.on("connect", () => {
       console.log("Conectado al servidor:", this.socket.id);
-      if (this.room$.getValue() && this.gameStatus.getValue() === 'ready') {
+      if (this.restoring && this.session?.roomId) {
+        this.requestRejoin(this.session.roomId);
+      } else if (this.room$.getValue() && this.gameStatus.getValue() === 'ready') {
         // partida en curso: pedir volver a ella (el servidor nos reconoce por playerId)
-        this.clearRejoinTimeout();
-        this.socket.emit('rejoin', this.room$.getValue());
-        this.rejoinTimeout = setTimeout(() => {
-          this.rejoinTimeout = null;
-          this.rejoinFailed$.next();
-        }, REJOIN_TIMEOUT_MS);
+        this.requestRejoin(this.room$.getValue());
       } else {
         if (this.gameStatus.getValue() === 'waiting') {
           // el servidor saca de la sala de espera a quien se cae; volvemos a pedir lugar
@@ -166,6 +180,53 @@ export class SocketService {
       window.addEventListener('online', wake);
       document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') wake(); });
     }
+  }
+
+  private requestRejoin(roomId: string) {
+    this.clearRejoinTimeout();
+    this.socket.emit('rejoin', roomId);
+    this.rejoinTimeout = setTimeout(() => {
+      this.rejoinTimeout = null;
+      this.abandonRestore();
+      this.rejoinFailed$.next();
+    }, REJOIN_TIMEOUT_MS);
+  }
+  private abandonRestore() {
+    if (!this.restoring) return;
+    this.restoring = false;
+    this.clearSession();
+  }
+  get savedName(): string { return this.session?.name ?? ''; }
+  setPlayerName(name: string) { this.saveSession({ name }); }
+
+  private static storage(): Storage | null {
+    try { return typeof sessionStorage !== 'undefined' ? sessionStorage : null; } catch { return null; }
+  }
+  private static loadPlayerId(): string {
+    const st = SocketService.storage();
+    try {
+      const saved = st?.getItem(KEY_ID);
+      if (saved) return saved;
+    } catch { /* sin almacenamiento: id nuevo en cada carga */ }
+    const id = SocketService.newPlayerId();
+    try { st?.setItem(KEY_ID, id); } catch { /* idem */ }
+    return id;
+  }
+  private static loadSession(): SavedSession | null {
+    try {
+      const raw = SocketService.storage()?.getItem(KEY_SESSION);
+      if (!raw) return null;
+      const s = JSON.parse(raw);
+      return s && typeof s.gameId === 'string' && typeof s.name === 'string' ? s : null;
+    } catch { return null; }
+  }
+  private saveSession(patch: Partial<SavedSession>) {
+    this.session = { gameId: this.lastGameId, name: '', ...this.session, ...patch };
+    try { SocketService.storage()?.setItem(KEY_SESSION, JSON.stringify(this.session)); } catch { /* opcional */ }
+  }
+  private clearSession() {
+    this.session = null;
+    try { SocketService.storage()?.removeItem(KEY_SESSION); } catch { /* opcional */ }
   }
 
   private static newPlayerId(): string {
@@ -341,5 +402,7 @@ export class SocketService {
     this.opponentOffline$.next(false);
     this.authoritative = false;
     this.phase$.next(null);
+    this.restoring = false;
+    this.clearSession();
   }
 }

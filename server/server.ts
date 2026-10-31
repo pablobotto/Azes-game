@@ -25,6 +25,8 @@ interface RoomMeta {
   started: boolean;
   result?: { type: "win" | "tie"; winnerId?: string };
   graceTimers: Record<string, NodeJS.Timeout>;
+  // nombre que cada jugador dijo tener (solo para mostrarlo; lo escribe el cliente)
+  names: Record<string, string>;
 }
 
 const roomDetail: Record<string, GameState> = {};
@@ -79,7 +81,7 @@ io.on("connection", (socket) => {
     if (!roomId) {
       roomId = `room${++roomCounter}`;
       rooms[roomId] = [];
-      roomMeta[roomId] = { gameId: game, started: false, graceTimers: {} };
+      roomMeta[roomId] = { gameId: game, started: false, graceTimers: {}, names: {} };
       roomDetail[roomId] = { roomId, authoritative: isAuthoritative(), stairs: [[], [], [], [], [], [], [], []], deck: [], playerHands: {}, playerDecks: {}, playerPiles: {}};
     }
     // agregar y unirse
@@ -198,8 +200,10 @@ io.on("connection", (socket) => {
   });
 
   on("displayOpponentName", (roomId: string, opponentName: string) => {
-    if (!isMember(roomId, playerId)) return;
+    if (!isMember(roomId, playerId) || typeof opponentName !== "string") return;
+    opponentName = opponentName.trim().slice(0, 30);
     enqueue(roomId, async () => {
+      if (roomMeta[roomId]) roomMeta[roomId].names[playerId] = opponentName;
       socket.to(roomId).emit("displayOpponentName", { opponentName: opponentName });
     });
   });
@@ -268,6 +272,10 @@ io.on("connection", (socket) => {
         else if (meta.result.winnerId !== playerId) socket.emit("lose");
         else if (cur.authoritative) socket.emit("youWon");
       }
+      // tras un refresh el cliente no recuerda el nombre del rival: se lo devolvemos
+      const rivalId = rooms[roomId].find(id => id !== playerId);
+      const rivalName = rivalId && meta.names[rivalId];
+      if (rivalName) socket.emit("displayOpponentName", { opponentName: rivalName });
       socket.to(roomId).emit("opponentOnline");
     });
   });

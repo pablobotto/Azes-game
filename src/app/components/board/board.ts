@@ -68,6 +68,11 @@ export class BoardComponent implements AfterViewInit {
   }
 
   async ngOnInit() {
+    // recarga de pestaña con una partida abierta: volver a mostrar el nombre y esperar que el servidor devuelva la partida
+    if (this.socketService.restoring) {
+      this.playerName = this.socketService.savedName;
+      this.joined = true;
+    }
     combineLatest([this.gameSteps.currentStep$, this.gameSteps.currentPlayerType$
     ]).subscribe(async ([step, player]) => {
       switch (step) {
@@ -148,6 +153,7 @@ export class BoardComponent implements AfterViewInit {
   }
 
   async joinRoom() {
+    this.socketService.setPlayerName(this.playerName);
     await this.socketService.joinRoom();
     this.joined = true;
   }

@@ -3,7 +3,7 @@
 Documento de trabajo con el resultado del análisis de bugs, lo ya corregido en la fase 1 (rama `feature/inprovments`) y lo que sigue.
 Restricción de base: **no se cambian las reglas del juego**. Cuando se mueva código se mueve tal cual, nunca se reescribe.
 
-## Estado actual (v1.2.0)
+## Estado actual (v1.3.0)
 
 | Etapa | Estado |
 |---|---|
@@ -12,7 +12,7 @@ Restricción de base: **no se cambian las reglas del juego**. Cuando se mueva c�
 | Fix de build del backend en Render | Hecho (`skipLibCheck` en `server/tsconfig.json`). |
 | Versión visible junto a la sala | Hecho (se toma de `package.json`). |
 | Modo Vs CPU y su lógica | Eliminado. |
-| Fase 2 – servidor autoritativo | En curso. (a) reglas en `server/games/azes/rules.ts`. (b) hecho: acciones `draw`/`play`/`discard` en `server/games/azes/actions.ts`, con el interruptor `AUTHORITATIVE` (variable de entorno del servidor): **encendido por defecto**; con `AUTHORITATIVE=0` vuelve al modo de la fase 1 sin tocar código. `start-dev -Legacy` también lo apaga. Revancha probada local OK; reconexiones se prueban en producción. (c) hecho: estado con `version` y chequeo de las 108 cartas tras cada acción (si falla, se deshace y se registra `INVARIANTE ROTO`). (d) hecho: cada jugador recibe su vista (`server/games/azes/view.ts`): sin la mano del rival ni el mazo central. Pruebas: `cd server; npm test` (42). Falta (e) y la persistencia ante refresh, ver sección 5. |
+| Fase 2 – servidor autoritativo | En curso. (a) reglas en `server/games/azes/rules.ts`. (b) hecho: acciones `draw`/`play`/`discard` en `server/games/azes/actions.ts`, con el interruptor `AUTHORITATIVE` (variable de entorno del servidor): **encendido por defecto**; con `AUTHORITATIVE=0` vuelve al modo de la fase 1 sin tocar código. `start-dev -Legacy` también lo apaga. Revancha probada local OK; reconexiones se prueban en producción. (c) hecho: estado con `version` y chequeo de las 108 cartas tras cada acción (si falla, se deshace y se registra `INVARIANTE ROTO`). (d) hecho: cada jugador recibe su vista (`server/games/azes/view.ts`): sin la mano del rival ni el mazo central. Pruebas: `cd server; npm test` (42). Persistencia ante refresh hecha (v1.3.0): el `playerId`, la sala y el nombre viven en `sessionStorage` (una por pestaña) y al recargar se vuelve a la partida con `rejoin`; el servidor devuelve el nombre del rival. Falta solo (e), ver sección 5. |
 | Fase 3 – varios juegos | Pendiente (ver sección 6). |
 | Panel de admin (solo lectura) | Pendiente (ver sección 7). |
 
@@ -72,13 +72,11 @@ Prueba de humo ya hecha contra el servidor real: snapshot malo no pisa al rival,
 
 | Gravedad | Dónde | Detalle |
 |---|---|---|
-| Media | Refrescar la pestaña | No recupera la partida: el `playerId` se genera en cada carga y el tablero no se reconstruye. Hay que persistirlo (sessionStorage) y restaurar el estado desde `rejoined`. |
 | Media | Información oculta | Ambos clientes reciben el estado completo (mano del rival y mazo central). Se puede hacer trampa mirando la red. **Resuelto en modo autoritativo** (paso (d)); sigue así en el modo viejo. |
 | Media | Rematch | `rematchAccepted` reparte de nuevo pero no resetea `currentPlayerId` ni los pasos del cliente; hereda turno y paso de la partida anterior. Decidir si es intencional. |
 | Media | Revancha perdida | `requestRematch` no se reenvía si el rival estaba offline. |
 | Baja | `ngOnDestroy` | Hace `socket.disconnect()` sobre un singleton y nunca reconecta. |
 | Baja | Reglas | `canPlaceOnStair` muta `numericValue` del comodín; la IA lo usa en simulaciones con rollback y deja valores residuales. |
-| Baja | Nombre del rival | Si se recarga la página se pierde el nombre del rival (solo vive en el cliente). |
 | Baja | Deprecaciones | `*ngIf` / `*ngFor` en `board.html` (migrar a `@if` / `@for`). |
 | Aviso | Config | URL del backend en `socket.service.ts` está en `localhost`. |
 
