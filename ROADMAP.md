@@ -3,7 +3,7 @@
 Documento de trabajo con el resultado del análisis de bugs, lo ya corregido en la fase 1 (rama `feature/inprovments`) y lo que sigue.
 Restricción de base: **no se cambian las reglas del juego**. Cuando se mueva código se mueve tal cual, nunca se reescribe.
 
-## Estado actual (v1.1.0)
+## Estado actual (v1.2.0)
 
 | Etapa | Estado |
 |---|---|
@@ -12,8 +12,9 @@ Restricción de base: **no se cambian las reglas del juego**. Cuando se mueva c�
 | Fix de build del backend en Render | Hecho (`skipLibCheck` en `server/tsconfig.json`). |
 | Versión visible junto a la sala | Hecho (se toma de `package.json`). |
 | Modo Vs CPU y su lógica | Eliminado. |
-| Fase 2 – servidor autoritativo | En curso. (a) reglas en `server/games/azes/rules.ts`. (b) hecho: acciones `draw`/`play`/`discard` en `server/games/azes/actions.ts`, detrás del interruptor `AUTHORITATIVE=1` (variable de entorno del servidor; sin ella todo funciona como en la fase 1). Pruebas: `cd server; npm test` (35). `start-dev` lo activa por defecto (`-Legacy` lo apaga). Siguen (c) a (e), ver sección 5. |
+| Fase 2 – servidor autoritativo | En curso. (a) reglas en `server/games/azes/rules.ts`. (b) hecho: acciones `draw`/`play`/`discard` en `server/games/azes/actions.ts`, con el interruptor `AUTHORITATIVE` (variable de entorno del servidor): **encendido por defecto**; con `AUTHORITATIVE=0` vuelve al modo de la fase 1 sin tocar código. `start-dev -Legacy` también lo apaga. Revancha probada local OK; reconexiones se prueban en producción. (c) hecho: estado con `version` y chequeo de las 108 cartas tras cada acción (si falla, se deshace y se registra `INVARIANTE ROTO`). (d) hecho: cada jugador recibe su vista (`server/games/azes/view.ts`): sin la mano del rival ni el mazo central. Pruebas: `cd server; npm test` (42). Falta (e) y la persistencia ante refresh, ver sección 5. |
 | Fase 3 – varios juegos | Pendiente (ver sección 6). |
+| Panel de admin (solo lectura) | Pendiente (ver sección 7). |
 
 ## Levantar el proyecto
 
@@ -72,7 +73,7 @@ Prueba de humo ya hecha contra el servidor real: snapshot malo no pisa al rival,
 | Gravedad | Dónde | Detalle |
 |---|---|---|
 | Media | Refrescar la pestaña | No recupera la partida: el `playerId` se genera en cada carga y el tablero no se reconstruye. Hay que persistirlo (sessionStorage) y restaurar el estado desde `rejoined`. |
-| Media | Información oculta | Ambos clientes reciben el estado completo (mano del rival y mazo central). Se puede hacer trampa mirando la red. Se cierra en la fase 2. |
+| Media | Información oculta | Ambos clientes reciben el estado completo (mano del rival y mazo central). Se puede hacer trampa mirando la red. **Resuelto en modo autoritativo** (paso (d)); sigue así en el modo viejo. |
 | Media | Rematch | `rematchAccepted` reparte de nuevo pero no resetea `currentPlayerId` ni los pasos del cliente; hereda turno y paso de la partida anterior. Decidir si es intencional. |
 | Media | Revancha perdida | `requestRematch` no se reenvía si el rival estaba offline. |
 | Baja | `ngOnDestroy` | Hace `socket.disconnect()` sobre un singleton y nunca reconecta. |
@@ -127,7 +128,42 @@ interface GameModule<State, Action> {
 
 Prerrequisito: la fase 2, porque un `GameModule` con `applyAction` es lo que hace que agregar un juego no implique reescribir la red.
 
-## 7. Pendientes de proceso
+## 7. Panel de admin (solo lectura, sin base de datos)
+
+Objetivo: ver **en vivo** qué salas hay y quién juega en cada mesa. Todo sale de la memoria del servidor (`rooms`, `roomMeta`), así que no hace falta base de datos. No depende de la fase 2 ni de la 3.
+
+**Decisiones tomadas**
+
+- **El panel va en el frontend** (Angular, rutas `/admin` y `/administracion`): una pantalla de login y una pantalla de **solo lectura** con las salas en un sidebar.
+- **Restricción por IP en el backend:** el servidor tiene una lista de IPs permitidas (se lee `X-Forwarded-For`, porque Render pone un proxy delante). La página de Angular es pública, pero sin permiso la API contesta 403 y no muestra nada. Una restricción solo en el front no protegería nada.
+- El servidor expone `/admin/api/login` y `/admin/api/rooms` (JSON); socket.io sigue en `/socket.io`.
+
+**Qué muestra** (nada de cartas ni manos)
+
+| Dato | Detalle |
+|---|---|
+| Sala | id, juego (`azes`), estado: esperando / jugando / terminada, hora de inicio, número de partida (`matchId`) |
+| Jugadores | nombre de cada uno, si está conectado o en período de gracia, de quién es el turno |
+| Totales | salas activas, jugadores conectados, partidas en curso |
+
+Se actualiza sola cada pocos segundos (sondeo). Sin botones para cerrar salas ni expulsar, al menos al principio. El servidor hoy no guarda los nombres (solo los reenvía con `displayOpponentName`): hay que guardarlos en `roomMeta`. Los nombres los escribe cualquiera, así que se muestran como texto, nunca como HTML (evita XSS).
+
+**Seguridad**
+
+1. Solo HTTPS (Render ya lo da).
+2. **Clave guardada como hash, no en texto:** `scrypt` con sal, comparado con `crypto.timingSafeEqual`. El hash va en una constante del código (por ahora) y el texto de la clave nunca se escribe en el repo. Un script `npm run admin:hash` genera el hash.
+3. **Clave larga:** una frase de 5 o 6 palabras al azar (20+ caracteres). Es lo que protege si el repo es público, porque el hash se puede intentar romper sin conexión.
+4. **Sesión:** token aleatorio de 32 bytes guardado en memoria del servidor, vence a los 30 minutos sin uso. Como el front está en otro dominio, viaja en la cabecera `Authorization` y el front lo guarda solo en memoria (no en `localStorage`). CORS abierto únicamente para el dominio del front en estas rutas.
+5. **Contra fuerza bruta:** máximo 5 intentos fallidos por IP, después bloqueo de 15 minutos; mismo mensaje de error exista o no el usuario.
+6. **Cabeceras:** `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`; el front con `Content-Security-Policy` estricta.
+7. **Sin datos de más:** no se muestran los `playerId` completos; cada login (ok o fallido) queda en el log con la IP.
+8. **Cuando se pueda:** mover el hash a la variable de entorno `ADMIN_PASSWORD_HASH` en Render para sacarlo del repo.
+
+**Límite a tener presente:** una clave fija en el código es cómoda pero débil frente a una filtración del repo; el hash retrasa a un atacante, no lo frena. Por eso la clave larga (3) y la variable de entorno (8) son lo más importante a mediano plazo.
+
+**Pasos sugeridos:** (1) guardar nombres en `roomMeta`; (2) endpoints con login, sesión, lista de IPs y límite de intentos; (3) pantallas de login y de salas en Angular; (4) pruebas de seguridad (clave mala, bloqueo, sesión vencida, IP no permitida); (5) pasar el hash a variable de entorno.
+
+## 8. Pendientes de proceso
 
 - ~~Merge de `feature/inprovments` a `main`~~ hecho. Las ramas viejas ya se borraron en local y en origen.
 - ~~URL del backend por entorno~~ hecho.

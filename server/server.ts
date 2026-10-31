@@ -3,12 +3,13 @@ import { Server, Socket } from "socket.io";
 import { Card } from "./card.model";
 import { GameState } from "./gameState.model";
 import { applyAction, GameResult } from "./games/azes/actions";
+import { checkInvariant, viewFor } from "./games/azes/view";
 
 // Tiempo que se espera a un jugador desconectado antes de darlo por ido.
 const GRACE_MS = 90_000;
-// Interruptor de la fase 2: con AUTHORITATIVE=1 las salas nuevas se juegan con acciones validadas en el servidor.
-// Sin la variable (o con otro valor) todo funciona como en la fase 1. Se lee al crear cada sala.
-const isAuthoritative = () => process.env.AUTHORITATIVE === "1";
+// Interruptor de la fase 2: las salas nuevas se juegan con acciones validadas en el servidor.
+// Para volver al modo de la fase 1 sin tocar el codigo: AUTHORITATIVE=0 en el entorno. Se lee al crear cada sala.
+const isAuthoritative = () => process.env.AUTHORITATIVE !== "0";
 const KNOWN_GAMES = ["azes"];
 
 const httpServer = createServer();
@@ -98,7 +99,7 @@ io.on("connection", (socket) => {
       roomMeta[roomId].started = true;
       socket.emit("identification", { socketId: playerId });
       createNewGame(roomId);
-      io.to(roomId).emit("ready", { roomId, socketId: playerId, gameState: roomDetail[roomId] });
+      sendToRoom(roomId, "ready", { roomId, socketId: playerId });
     }
   });
 
@@ -150,7 +151,17 @@ io.on("connection", (socket) => {
         return;
       }
       if (meta.result) { reply({ error: "game_over" }); return; }
+      // copia para deshacer la accion si dejara el estado sin las 108 cartas
+      const backup = JSON.parse(JSON.stringify(cur));
       const outcome = applyAction(cur, playerId, payload);
+      const broken = outcome.error ? null : checkInvariant(cur);
+      if (broken) {
+        console.error(`INVARIANTE ROTO en ${roomId} tras ${JSON.stringify(payload)}: ${broken}. Accion deshecha.`);
+        Object.assign(cur, backup);
+        sendSync(socket, roomId);
+        reply({ error: "invariant" });
+        return;
+      }
       if (outcome.error) {
         console.log(`action rechazada en ${roomId} de ${playerId}: ${outcome.error}`);
         sendSync(socket, roomId);
@@ -158,7 +169,7 @@ io.on("connection", (socket) => {
         return;
       }
       cur.version = (cur.version ?? 0) + 1;
-      io.to(roomId).emit("state", { gameState: cur });
+      sendToRoom(roomId, "state");
       reply({ ok: true });
       if (outcome.result) finishGame(roomId, socket, outcome.result);
     });
@@ -217,7 +228,7 @@ io.on("connection", (socket) => {
       if (!roomDetail[roomId]) return;
       createNewGame(roomId);
       if (roomMeta[roomId]) roomMeta[roomId].result = undefined;
-      io.to(roomId).emit("rematchAccepted", {gameState: roomDetail[roomId]});
+      sendToRoom(roomId, "rematchAccepted");
     });
   });
   on("requestRematch", (roomId: string) => {
@@ -251,7 +262,7 @@ io.on("connection", (socket) => {
       }
       clearGrace(roomId, playerId);
       socket.join(roomId);
-      socket.emit("rejoined", { gameState: cur, socketId: playerId });
+      socket.emit("rejoined", { gameState: stateFor(roomId, playerId), socketId: playerId });
       if (meta.result) {
         if (meta.result.type === "tie") socket.emit("tie");
         else if (meta.result.winnerId !== playerId) socket.emit("lose");
@@ -321,8 +332,21 @@ function finishGame(roomId: string, actor: Socket, result: GameResult) {
   actor.emit("youWon");
   actor.to(roomId).emit("lose");
 }
+// En modo autoritativo cada jugador recibe su vista (sin la mano del rival ni el mazo central).
+function stateFor(roomId: string, forPlayerId: string): GameState {
+  const state = roomDetail[roomId];
+  return state.authoritative ? viewFor(state, forPlayerId) : state;
+}
+function sendToRoom(roomId: string, event: string, extra: object = {}) {
+  for (const pid of rooms[roomId] ?? []) {
+    const sid = playerSockets[pid];
+    if (sid) io.to(sid).emit(event, { ...extra, gameState: stateFor(roomId, pid) });
+  }
+}
 function sendSync(socket: Socket, roomId: string) {
-  if (roomDetail[roomId]) socket.emit("stateSync", { gameState: roomDetail[roomId] });
+  if (!roomDetail[roomId]) return;
+  const forPlayer = Object.keys(playerSockets).find(pid => playerSockets[pid] === socket.id);
+  socket.emit("stateSync", { gameState: forPlayer ? stateFor(roomId, forPlayer) : roomDetail[roomId] });
 }
 function clearGrace(roomId: string, playerId: string) {
   const timers = roomMeta[roomId]?.graceTimers;
