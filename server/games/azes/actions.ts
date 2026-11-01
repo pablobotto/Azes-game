@@ -28,9 +28,19 @@ export interface GameResult {
   winnerId?: string;
 }
 
+/**
+ * Descripcion del movimiento confirmado, para que el cliente del rival pueda animarlo. Solo trae cartas que
+ * quedan boca arriba en la mesa (jugadas o descartadas); al robar manda unicamente la cantidad.
+ */
+export type MoveEffect =
+  | { kind: "play"; playerId: string; card: Card; from: "hand" | "deck" | "pile"; pileIdx?: number; stairIdx: number }
+  | { kind: "discard"; playerId: string; card: Card; pileIdx: number }
+  | { kind: "draw"; playerId: string; count: number; reshuffled: number[] };
+
 export interface ActionOutcome {
   error?: ActionError;
   result?: GameResult;
+  effect?: MoveEffect;
 }
 
 const PILE_COUNT = 3;
@@ -53,12 +63,14 @@ export function applyAction(
 
 function draw(state: GameState, playerId: string, shuffle: rules.Shuffler): ActionOutcome {
   if (state.phase !== "drawing") return { error: "wrong_step" };
-  const r = rules.drawStep(state.deck, state.stairs, state.playerHands[playerId], shuffle);
+  const hand = state.playerHands[playerId];
+  const before = hand.length;
+  const r = rules.drawStep(state.deck, state.stairs, hand, shuffle);
   state.deck = r.deck;
   state.stairs = r.stairs;
   if (r.tie) return { result: { type: "tie" } };
   state.phase = "playing";
-  return {};
+  return { effect: { kind: "draw", playerId, count: hand.length - before, reshuffled: r.reshuffled } };
 }
 
 function play(state: GameState, playerId: string, cardId: string, stairIdx: number): ActionOutcome {
@@ -72,9 +84,10 @@ function play(state: GameState, playerId: string, cardId: string, stairIdx: numb
   stair.push(source.card);
   stair.sort((a, b) => a.numericValue - b.numericValue);
 
-  if (rules.hasWon(state.playerDecks[playerId])) return { result: { type: "win", winnerId: playerId } };
+  const effect: MoveEffect = { kind: "play", playerId, card: source.card, from: source.from, pileIdx: source.pileIdx, stairIdx };
+  if (rules.hasWon(state.playerDecks[playerId])) return { result: { type: "win", winnerId: playerId }, effect };
   if (rules.canGetMoreCardsInTheCurrentTurn(state.playerHands[playerId])) state.phase = "drawing";
-  return {};
+  return { effect };
 }
 
 function discard(state: GameState, playerId: string, cardId: string, pileIdx: number): ActionOutcome {
@@ -91,22 +104,28 @@ function discard(state: GameState, playerId: string, cardId: string, pileIdx: nu
   state.currentPlayerId = opponentId;
   state.turn = (state.turn ?? 0) + 1;
   state.phase = "drawing";
-  return {};
+  return { effect: { kind: "discard", playerId, card, pileIdx } };
 }
 
 /**
  * Cartas que se pueden jugar a una escalera: cualquiera de la mano, o la ultima (la visible) del mazo
  * propio o de un monton propio.
  */
-function findPlayableCard(state: GameState, playerId: string, cardId: string): { card: Card; zone: Card[]; index: number } | null {
+function findPlayableCard(state: GameState, playerId: string, cardId: string):
+    { card: Card; zone: Card[]; index: number; from: "hand" | "deck" | "pile"; pileIdx?: number } | null {
   const hand = state.playerHands[playerId];
   const handIndex = hand.findIndex(c => c.id === cardId);
-  if (handIndex !== -1) return { card: hand[handIndex], zone: hand, index: handIndex };
+  if (handIndex !== -1) return { card: hand[handIndex], zone: hand, index: handIndex, from: "hand" };
 
-  const zones = [state.playerDecks[playerId], ...state.playerPiles[playerId]];
-  for (const zone of zones) {
-    if (zone.length > 0 && zone[zone.length - 1].id === cardId) {
-      return { card: zone[zone.length - 1], zone, index: zone.length - 1 };
+  const deck = state.playerDecks[playerId];
+  if (deck.length > 0 && deck[deck.length - 1].id === cardId) {
+    return { card: deck[deck.length - 1], zone: deck, index: deck.length - 1, from: "deck" };
+  }
+  const piles = state.playerPiles[playerId];
+  for (let pileIdx = 0; pileIdx < piles.length; pileIdx++) {
+    const pile = piles[pileIdx];
+    if (pile.length > 0 && pile[pile.length - 1].id === cardId) {
+      return { card: pile[pile.length - 1], zone: pile, index: pile.length - 1, from: "pile", pileIdx };
     }
   }
   return null;

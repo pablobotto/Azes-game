@@ -168,7 +168,8 @@ io.on("connection", (socket) => {
         return;
       }
       cur.version = (cur.version ?? 0) + 1;
-      sendToRoom(roomId, "state");
+      // el efecto va con el estado: el rival lo usa para animar el movimiento recien confirmado
+      sendToRoom(roomId, "state", { effect: outcome.effect });
       reply({ ok: true });
       if (outcome.result) finishGame(roomId, socket, outcome.result);
     });

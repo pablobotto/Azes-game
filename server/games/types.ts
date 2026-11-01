@@ -11,7 +11,7 @@
 import { GameState } from "../gameState.model";
 import { ActionOutcome } from "./azes/actions";
 
-export type { ActionOutcome, GameResult } from "./azes/actions";
+export type { ActionOutcome, GameResult, MoveEffect } from "./azes/actions";
 
 export interface GameModule {
   id: string;

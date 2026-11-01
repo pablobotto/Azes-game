@@ -3,6 +3,7 @@ import { io, Socket } from 'socket.io-client';
 import { BehaviorSubject, Subject } from 'rxjs';
 import { GameService } from './game.service';
 import { environment } from '../../enviroments/environment';
+import { MoveEffect } from '../models/effect.model';
 
 // Cuanto espera el cliente la respuesta del servidor a un rejoin antes de rendirse.
 const REJOIN_TIMEOUT_MS = 20000;
@@ -45,6 +46,8 @@ export class SocketService {
   // Paso que el servidor indica para mi turno (null si no es mi turno).
   phase$ = new BehaviorSubject<'drawing' | 'playing' | null>(null);
   won$ = new Subject<void>();
+  // Movimiento del rival recien confirmado, para animarlo. Solo se emite en el momento (nunca al reconstruir).
+  opponentMove$ = new Subject<MoveEffect>();
   private pendingActions = new Set<(res: ActionResult) => void>();
 
   public currentPlayerId$ = new BehaviorSubject<string>("non-multiplayer");
@@ -81,6 +84,7 @@ export class SocketService {
     });
     // Modo autoritativo: el servidor difunde el estado completo despues de cada accion.
     this.socket.on("state", (data) => {
+      this.announceOpponentMove(data);
       this.applyServerState(data.gameState);
     });
     this.socket.on("youWon", () => {
@@ -305,6 +309,18 @@ export class SocketService {
       this.pendingActions.add(finish);
       this.socket.emit('action', { ...action, roomId, matchId: this.gameServerData.matchId }, finish);
     });
+  }
+
+  // Avisa del movimiento del rival solo si este estado es el siguiente al que ya tengo (no un salto por reconexion),
+  // la pestaña se ve y la persona no pidio menos animaciones.
+  private announceOpponentMove(data: any) {
+    const effect: MoveEffect | undefined = data?.effect;
+    const prev = this.gameServerData;
+    if (!effect || effect.playerId === this.socketId || !prev) return;
+    if (prev.matchId !== data.gameState?.matchId || data.gameState.version !== prev.version + 1) return;
+    if (typeof document === 'undefined' || document.visibilityState !== 'visible') return;
+    if (typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    this.opponentMove$.next(effect);
   }
 
   // Estado que manda el servidor. En modo autoritativo es la unica fuente de verdad: se reemplaza todo

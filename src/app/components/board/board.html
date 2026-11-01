@@ -37,7 +37,7 @@
     <!-- Montones descartes rival -->
       <div class="opponent-piles">
         <div class="pile-slot" *ngFor="let pile of game.opponentPiles; let i = index">
-          <div *ngFor="let card of pile; let j = index" style="position: absolute" [ngStyle]="{'top.px': (j * -14) + 55}">
+          <div *ngFor="let card of pile; let j = index" style="position: absolute" [attr.data-card-id]="card.id" [style.visibility]="fxHidden.has(card.id) ? 'hidden' : null" [ngStyle]="{'top.px': (j * -14) + 55}">
             <app-card [card]="card"></app-card>
           </div>
         </div>
@@ -52,7 +52,7 @@
           <div *ngFor="let stair of (stairs$ | async); let i = index" 
             cdkDropList class="stair-slot" [id]="'stair' + (i + 1)" 
             [cdkDropListData]="stair" (cdkDropListDropped)="drop($event)" [ngClass]="{'stair-slot-comodin': hasComodin(stair)}">
-              <div *ngFor="let card of stair" style="position: absolute">
+              <div *ngFor="let card of stair" style="position: absolute" [attr.data-card-id]="card.id" [style.visibility]="fxHidden.has(card.id) ? 'hidden' : null">
                 <app-card [card]="card"></app-card>
                 <div *ngIf="card.value === 'C'" class="tooltip">Joker: {{ getCardDisplayValue(card.numericValue) }}</div>
               </div>
@@ -87,6 +87,14 @@
         </div>
       </div>
     </div>
+  </div>
+</div>
+<!-- Cartas que vuelan cuando el rival juega -->
+<div class="fx-layer">
+  <div *ngFor="let f of flying" class="fx-ghost"
+       [style.transform]="'translate(' + (f.moving ? f.x1 : f.x0) + 'px,' + (f.moving ? f.y1 : f.y0) + 'px)'"
+       [style.transition-delay.ms]="f.delay">
+    <app-card [card]="f.card" [faceDown]="f.faceDown"></app-card>
   </div>
 </div>
 <!-- Notificaciones flotantes -->

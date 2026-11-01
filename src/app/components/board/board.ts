@@ -20,6 +20,14 @@ import { OpponentLeftModalComponent } from '../opponent-left-modal/opponent-left
 import { ReconnectModalComponent } from '../internet-connection/internet-connection';
 import pkg from '../../../../package.json';
 import { DEFAULT_GAME_ID, GAMES, isPlayableGame } from '../../games/game-registry';
+import { MoveEffect } from '../../models/effect.model';
+
+/** Carta que vuela por encima del tablero mientras se anima un movimiento del rival. */
+interface FlyingCard { card: Card; faceDown: boolean; x0: number; y0: number; x1: number; y1: number; delay: number; moving: boolean; }
+const CARD_W = 60;
+const CARD_H = 90;
+const FLY_MS = 500;
+const BACK: Card = { suit: '♠', value: '?', numericValue: 0, id: 'fx-back', faceUp: false };
 
 @Component({
   selector: 'app-board',
@@ -38,6 +46,9 @@ export class BoardComponent implements AfterViewInit {
 
   readonly version: string = pkg.version;
   readonly games = GAMES;
+  // cartas que ya estan en su lugar pero se ocultan hasta que termina de llegar la que vuela
+  fxHidden = new Set<string>();
+  flying: FlyingCard[] = [];
   selectedGame: string = DEFAULT_GAME_ID;
   joined = false;
   gameStarted = false;
@@ -117,6 +128,11 @@ export class BoardComponent implements AfterViewInit {
       if (status === 'ready') {
         await this.gameSteps.resetGame();
       }
+    });
+    // movimiento del rival recien confirmado: la carta se oculta ya (antes de dibujar el estado nuevo) y vuela hasta su lugar
+    this.socketService.opponentMove$.subscribe(effect => {
+      if (effect.kind !== 'draw') this.fxHidden.add(effect.card.id);
+      setTimeout(() => this.animateMove(effect), 0);
     });
     this.socketService.startTurn$.subscribe(async () => {
       await this.startNewMPTurn();
@@ -201,6 +217,59 @@ export class BoardComponent implements AfterViewInit {
     offline: '⚠ Sin conexión, intentá de nuevo',
     timeout: '⚠ El servidor no respondió, intentá de nuevo',
   };
+
+  // ---- Efecto de vuelo para los movimientos del rival ----
+  private centerOf(el: Element | null): { x: number; y: number } | null {
+    const r = el?.getBoundingClientRect();
+    return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null;
+  }
+  private cardEl(id: string): HTMLElement | null {
+    return Array.from(document.querySelectorAll<HTMLElement>('[data-card-id]')).find(el => el.dataset['cardId'] === id) ?? null;
+  }
+  private ghost(card: Card, faceDown: boolean, from: { x: number; y: number }, to: { x: number; y: number }, delay = 0): FlyingCard {
+    return { card, faceDown, x0: from.x - CARD_W / 2, y0: from.y - CARD_H / 2, x1: to.x - CARD_W / 2, y1: to.y - CARD_H / 2, delay, moving: false };
+  }
+  private async animateMove(e: MoveEffect) {
+    const ghosts: FlyingCard[] = [];
+    try {
+      this.cd.detectChanges(); // el estado nuevo ya llego: dibujarlo para medir donde quedo la carta
+      const handPos = this.centerOf(document.querySelector('.opponent-cards'));
+      const deckArea = this.centerOf(document.querySelector('.deck-area'));
+      if (e.kind === 'draw') {
+        if (handPos && deckArea) {
+          for (let i = 0; i < Math.min(e.count, 5); i++) ghosts.push(this.ghost(BACK, true, deckArea, handPos, i * 120));
+          for (const idx of e.reshuffled) {
+            const from = this.centerOf(document.getElementById('stair' + (idx + 1)));
+            if (from) ghosts.push(this.ghost(BACK, true, from, deckArea));
+          }
+        }
+      } else {
+        const target = this.centerOf(this.cardEl(e.card.id));
+        let source = handPos;
+        if (e.kind === 'play' && e.from === 'deck') {
+          const r = document.querySelector('.opponent-deck')?.getBoundingClientRect();
+          source = r ? { x: r.left + CARD_W / 2, y: r.top + CARD_H / 2 } : handPos;
+        } else if (e.kind === 'play' && e.from === 'pile') {
+          source = this.centerOf(document.querySelectorAll('.opponent-piles .pile-slot')[e.pileIdx ?? 0] ?? null) ?? handPos;
+        }
+        if (source && target) ghosts.push(this.ghost(e.card, false, source, target));
+      }
+      if (ghosts.length === 0) return;
+      this.flying = [...this.flying, ...ghosts];
+      this.cd.detectChanges();
+      await new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+      ghosts.forEach(g => g.moving = true);
+      this.cd.detectChanges();
+      await new Promise(r => setTimeout(r, FLY_MS + Math.max(...ghosts.map(g => g.delay)) + 40));
+    } catch (err) {
+      console.warn('No se pudo animar el movimiento', err);
+    } finally {
+      // pase lo que pase la carta tiene que quedar visible
+      if (e.kind !== 'draw') this.fxHidden.delete(e.card.id);
+      this.flying = this.flying.filter(f => !ghosts.includes(f));
+      this.cd.detectChanges();
+    }
+  }
 
   // Modo autoritativo: no se mueve nada localmente. Se pide la accion y el estado vuelve del servidor.
   private async dropAuthoritative(event: CdkDragDrop<Card[]>) {
