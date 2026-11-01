@@ -253,6 +253,7 @@ export class BoardComponent implements AfterViewInit {
           source = this.centerOf(document.querySelectorAll('.opponent-piles .pile-slot')[e.pileIdx ?? 0] ?? null) ?? handPos;
         }
         if (source && target) ghosts.push(this.ghost(e.card, false, source, target));
+        else console.debug('[fx] sin', source ? 'destino' : 'origen', e.kind, (e as any).from, e.card.id);
       }
       if (ghosts.length === 0) return;
       this.flying = [...this.flying, ...ghosts];

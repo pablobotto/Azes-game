@@ -317,8 +317,14 @@ export class SocketService {
     const effect: MoveEffect | undefined = data?.effect;
     const prev = this.gameServerData;
     if (!effect || effect.playerId === this.socketId || !prev) return;
-    if (prev.matchId !== data.gameState?.matchId || data.gameState.version !== prev.version + 1) return;
-    if (typeof document === 'undefined' || document.visibilityState !== 'visible') return;
+    if (prev.matchId !== data.gameState?.matchId || data.gameState.version !== prev.version + 1) {
+      console.debug('[fx] descartado: salto de version', prev.version, '->', data.gameState?.version, effect.kind);
+      return;
+    }
+    if (typeof document === 'undefined' || document.visibilityState !== 'visible') {
+      console.debug('[fx] descartado: pestaña oculta', effect.kind);
+      return;
+    }
     if (typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     this.opponentMove$.next(effect);
   }
