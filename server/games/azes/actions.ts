@@ -21,7 +21,8 @@ export type AzesAction =
   | { type: "play"; cardId: string; stairIdx: number }
   | { type: "discard"; cardId: string; pileIdx: number };
 
-export type ActionError = "bad_action" | "not_your_turn" | "wrong_step" | "illegal_move" | "ace_first";
+// "ace_first" es de Azes; "cannot_close" y "deck_empty" son de Chinchon
+export type ActionError = "bad_action" | "not_your_turn" | "wrong_step" | "illegal_move" | "ace_first" | "cannot_close" | "deck_empty";
 
 export interface GameResult {
   type: "win" | "tie";
@@ -37,10 +38,13 @@ export type MoveEffect =
   | { kind: "discard"; playerId: string; card: Card; pileIdx: number }
   | { kind: "draw"; playerId: string; count: number; reshuffled: number[] };
 
+/** Efecto de un juego que no es Azes (Chinchon...): siempre un 'kind' y solo datos que ya son publicos. */
+export type OtherEffect = { kind: string; [key: string]: unknown };
+
 export interface ActionOutcome {
   error?: ActionError;
   result?: GameResult;
-  effect?: MoveEffect;
+  effect?: MoveEffect | OtherEffect;
 }
 
 const PILE_COUNT = 3;
@@ -96,12 +100,14 @@ function discard(state: GameState, playerId: string, cardId: string, pileIdx: nu
   if (!rules.canDiscardToPile(hand)) return { error: "ace_first" };
   const index = hand.findIndex(c => c.id === cardId);
   if (index === -1) return { error: "illegal_move" };
-  const opponentId = Object.keys(state.playerHands).find(id => id !== playerId);
-  if (!opponentId) return { error: "bad_action" };
+  // siguiente en orden de asiento (con 2 jugadores es el rival)
+  const seats = Object.keys(state.playerHands);
+  const nextId = seats.length > 1 ? seats[(seats.indexOf(playerId) + 1) % seats.length] : undefined;
+  if (!nextId) return { error: "bad_action" };
 
   const [card] = hand.splice(index, 1);
   state.playerPiles[playerId][pileIdx].push(card);
-  state.currentPlayerId = opponentId;
+  state.currentPlayerId = nextId;
   state.turn = (state.turn ?? 0) + 1;
   state.phase = "drawing";
   return { effect: { kind: "discard", playerId, card, pileIdx } };

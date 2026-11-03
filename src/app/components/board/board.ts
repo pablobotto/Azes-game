@@ -21,6 +21,7 @@ import { ReconnectModalComponent } from '../internet-connection/internet-connect
 import pkg from '../../../../package.json';
 import { DEFAULT_GAME_ID, GAMES, isPlayableGame } from '../../games/game-registry';
 import { MoveEffect } from '../../models/effect.model';
+import { ChinchonComponent } from '../chinchon/chinchon';
 
 /** Carta que vuela por encima del tablero mientras se anima un movimiento del rival. */
 interface FlyingCard { card: Card; faceDown: boolean; x0: number; y0: number; x1: number; y1: number; delay: number; moving: boolean; }
@@ -33,7 +34,7 @@ const BACK: Card = { suit: '♠', value: '?', numericValue: 0, id: 'fx-back', fa
   selector: 'app-board',
   templateUrl: './board.html',
   styleUrls: ['./board.scss'],
-  imports: [CommonModule, CardComponent, DeckComponent, FakeCardComponent, NotificationComponent, OpponentLeftModalComponent, ReconnectModalComponent ,GameResultModalComponent, DragDropModule, FormsModule],
+  imports: [CommonModule, CardComponent, DeckComponent, FakeCardComponent, NotificationComponent, OpponentLeftModalComponent, ReconnectModalComponent ,GameResultModalComponent, ChinchonComponent, DragDropModule, FormsModule],
 })
 export class BoardComponent implements AfterViewInit {
   currentPlayerType$: typeof this.gameSteps.currentPlayerType$;
@@ -74,6 +75,9 @@ export class BoardComponent implements AfterViewInit {
     this.opponentName$ = this.socketService.opponentName$;
     this.gameResult$ = this.game.gameResult$
   }
+
+  // Juego que se muestra: el de la sala una vez dentro; antes de unirse, el elegido en el desplegable.
+  get viewGame(): string { return this.joined ? this.socketService.gameId : this.selectedGame; }
 
   ngAfterViewInit(): void {}
 

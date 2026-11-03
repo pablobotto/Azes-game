@@ -1,0 +1,75 @@
+<div class="table" *ngIf="state$ | async as s; else idle">
+  <ng-container *ngIf="opponentName$ | async as rivalName">
+    <!-- Puntajes: columna a un costado -->
+    <div class="scores">
+      <span class="round">Ronda {{ s.round }}</span>
+      <span>{{ rivalName }}<b>{{ s.scores[rivalId(s) || ''] }}</b></span>
+      <span>{{ myName }}<b>{{ s.scores[me] }}</b></span>
+    </div>
+
+    <!-- Mano del rival (solo dorsos) -->
+    <div class="row rival-hand">
+      <app-card *ngFor="let c of rivalHand(s); trackBy: trackByIndex" [card]="c" [faceDown]="true" [attr.data-card-id]="c.id" [style.visibility]="hidden.has(c.id) ? 'hidden' : null"></app-card>
+    </div>
+
+    <!-- Mazo y descarte -->
+    <div class="center">
+      <div class="pile deck-pile" [class.clickable]="canDraw(s)" (click)="draw(s, 'deck')" title="Robar del mazo">
+        <app-card *ngIf="s.deck.length" [card]="s.deck[0]" [faceDown]="true"></app-card>
+        <div class="label">Mazo · {{ s.deck.length }}</div>
+      </div>
+      <div class="pile discard-pile" [class.clickable]="canDraw(s) && discardTop(s)" (click)="draw(s, 'discard')" title="Robar del descarte">
+        <app-card *ngIf="discardTop(s) as top; else emptyDiscard" [card]="top" [attr.data-card-id]="top.id" [style.visibility]="hidden.has(top.id) ? 'hidden' : null"></app-card>
+        <ng-template #emptyDiscard><div class="empty-slot"></div></ng-template>
+        <div class="label">Descarte</div>
+      </div>
+    </div>
+
+    <!-- Mi mano y botones, pegados abajo -->
+    <div class="bottom">
+      <div class="row my-hand" cdkDropList cdkDropListOrientation="mixed" (cdkDropListDropped)="reorder($event, s)">
+        <div class="slot" cdkDrag *ngFor="let c of myHand(s); trackBy: trackById" [class.selected]="c.id === selectedId" [class.pickable]="canDiscard(s)" (click)="select(s, c)" [attr.data-card-id]="c.id" [style.visibility]="hidden.has(c.id) ? 'hidden' : null">
+          <app-card [card]="c"></app-card>
+        </div>
+      </div>
+      <div class="actions">
+        <button (click)="discard()" [disabled]="!canDiscard(s) || !selectedId">Descartar</button>
+        <button class="close" (click)="close()" [disabled]="!canDiscard(s) || !selectedId" title="Descarta la carta elegida y cierra la ronda">Cerrar</button>
+      </div>
+    </div>
+
+    <!-- Fin de ronda -->
+    <div class="round-end" *ngIf="s.phase === 'roundEnd' && s.last">
+      <div class="panel">
+        <h3 [class.mine]="s.last.closerId === me" [class.rival]="s.last.closerId !== me">{{ closerName(s, rivalName) }}<span *ngIf="s.last.chinchon"> · ¡CHINCHÓN!</span></h3>
+        <div class="rows">
+          <div class="player-row" *ngFor="let r of roundRows(s, rivalName)">
+            <div class="who">{{ r.name }}</div>
+            <div class="cards">
+              <div class="group" *ngFor="let g of r.melds"><app-card *ngFor="let c of g" [card]="c"></app-card></div>
+              <div class="group loose"><app-card *ngFor="let c of r.loose" [card]="c"></app-card></div>
+            </div>
+            <div class="points">
+              <div class="delta">{{ r.delta > 0 ? '+' + r.delta : r.delta }}</div>
+              <div class="detail">sueltas {{ r.points }}</div>
+              <div class="total">total {{ r.total }}</div>
+            </div>
+          </div>
+        </div>
+        <button *ngIf="!gameOver" class="next" (click)="nextRound()" [disabled]="iAmReady(s)">
+          {{ iAmReady(s) ? 'Esperando al rival…' : 'Siguiente ronda' }}
+        </button>
+      </div>
+    </div>
+  </ng-container>
+</div>
+<ng-template #idle>
+  <div class="table idle">Elegí un nombre y tocá <b>Unirse</b> para jugar al Chinchón</div>
+</ng-template>
+<!-- Cartas que vuelan cuando alguien roba o descarta -->
+<div class="fx-layer">
+  <div *ngFor="let f of flying" class="fx-ghost"
+       [style.transform]="'translate(' + (f.moving ? f.x1 : f.x0) + 'px,' + (f.moving ? f.y1 : f.y0) + 'px)'">
+    <app-card [card]="f.card" [faceDown]="f.faceDown"></app-card>
+  </div>
+</div>

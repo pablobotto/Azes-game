@@ -51,7 +51,7 @@ export function startMatch(state: GameState, shuffle: Shuffler = defaultShuffle)
   state.phase = "playing";
 
   const players = Object.keys(state.playerHands);
-  if (players.length < 2) return;
+  if (players.length < 2) return; // minimo de Azes; los jugadores salen del estado, sin tope fijo
   for (const id of players) {
     state.playerHands[id] = [];
     state.playerPiles[id] = [[], [], []];

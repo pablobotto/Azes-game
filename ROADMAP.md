@@ -127,6 +127,22 @@ interface GameModule<State, Action> {
 
 Prerrequisito: la fase 2, porque un `GameModule` con `applyAction` es lo que hace que agregar un juego no implique reescribir la red.
 
+### 6.1 Chinchón (segundo juego)
+
+Decisiones del dueño: 2 jugadores por ahora (estructura lista para 2 a 4: `minPlayers`/`maxPlayers` en el módulo, turno por asiento). Un solo mazo de póker: 52 cartas + 2 comodines = 54. Se cierra con menos de 5 puntos sueltos. Cerrar sin ninguna carta suelta = −10; el chinchón (escalera de 7 cartas del mismo palo) gana la partida al instante. Se juega por rondas hasta 100: quien llega pierde. Pantalla (canvas) propia, sin reutilizar el tablero de Azes.
+
+Reglas a implementar (supuestos a confirmar marcados con ?):
+- Mano de 7 cartas. Cada turno: robar (mazo o tope del descarte) y descartar una.
+- Combinaciones: pierna (3 o 4 cartas del mismo valor) y escalera (3 o más del mismo palo, consecutivas). El As es 1 (? no cierra K‑A‑2).
+- Valor de las sueltas: As 1, 2 a 7 su número, J/Q/K 10 (? el 8 y el 9 valen 8 y 9 y no 10, como en el mazo póker). Comodín: completa cualquier combinación; suelto vale 25 (?).
+- Cerrar: al descartar, las sueltas (sin contar la descartada) suman menos de 5 (? "menos de 5" estricto, o 5 o menos). Los rivales suman sus sueltas; quien cierra suma las suyas. Si cierra con todas las cartas combinadas (sin ninguna suelta): −10. Si las 7 forman una sola escalera del mismo palo (chinchón): gana la partida de inmediato.
+- Fin: el primero que llega o pasa 100 pierde; gana quien tiene menos puntos.
+- Mazo agotado: se mezcla el descarte menos el tope.
+
+Orden de trabajo: (1) ✅ estado de sala genérico (`RoomState` + `GameModule<S>`); (2) ✅ módulo `server/games/chinchon/` (reglas puras, acciones, vista por jugador, invariante de 54 cartas, 28 pruebas), registrado y probado con dos clientes reales; sus salas son siempre autoritativas; (3) ✅ primera versión del cliente: `components/chinchon/` (componentes Angular reutilizando `app-card`), habilitado en `game-registry.ts`. `SocketService` publica el estado de los juegos que no son Azes en `table$` (el servidor marca `gameId`); el tablero (`board`) conserva la barra superior y cambia el cuerpo según `viewGame`. Pendiente: probarlo en el navegador, animaciones propias y mostrar combinaciones mientras se juega.
+
+Acciones del servidor: `draw {from: 'deck'|'discard'}`, `discard {cardId}`, `close {cardId}`, `nextRound`. Fases: `drawing` → `discarding` → `roundEnd`. Errores nuevos: `cannot_close`, `deck_empty`. Simplificaciones a revisar: al cerrar no se pueden pegar cartas sueltas del rival a las combinaciones de quien cierra; el chinchón con comodín no cuenta como chinchón (solo cierra con −10).
+
 ## 7. Panel de admin (solo lectura, sin base de datos)
 
 Objetivo: ver **en vivo** qué salas hay y quién juega en cada mesa. Todo sale de la memoria del servidor (`rooms`, `roomMeta`), así que no hace falta base de datos. No depende de la fase 2 ni de la 3.

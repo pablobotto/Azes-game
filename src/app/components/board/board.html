@@ -6,7 +6,7 @@
     <option *ngFor="let g of games" [value]="g.id" [disabled]="!g.available">{{ g.name }}</option>
   </select>
   <div *ngIf="(status$ | async) === 'waiting'"> Esperando rival ...</div>
-  <div *ngIf="(status$ | async) === 'ready'">
+  <div *ngIf="(status$ | async) === 'ready' && viewGame === 'azes'">
     <h2 *ngIf="(currentPlayerId$ | async) === socketService.socketId" class="pill pill-green">
       {{ (currentStep$ | async) }}: {{ playerName }}
     </h2>
@@ -14,6 +14,15 @@
       Turno de {{opponentName$ | async}}
     </h2>
   </div>
+  <ng-container *ngIf="(status$ | async) === 'ready' && viewGame === 'chinchon' && (socketService.table$ | async) as t">
+    <h2 *ngIf="t.phase === 'roundEnd'" class="pill pill-green">Fin de la ronda</h2>
+    <h2 *ngIf="t.phase !== 'roundEnd' && t.currentPlayerId === socketService.socketId" class="pill pill-green">
+      {{ t.phase === 'drawing' ? 'Robá una carta' : 'Descartá o cerrá' }}
+    </h2>
+    <h2 *ngIf="t.phase !== 'roundEnd' && t.currentPlayerId !== socketService.socketId" class="pill pill-red">
+      Turno de {{opponentName$ | async}}
+    </h2>
+  </ng-container>
   <div *ngIf="socketService.opponentOffline$ | async" class="pill pill-red">⚠ Tu rival perdió la conexión, esperando...</div>
   <div *ngIf="(socketService.room$ | async) as roomId" class="pill pill-room" (mouseenter)="hoverRoom = true" (mouseleave)="hoverRoom = false"
        (click)="closeMpGame()"> {{ hoverRoom ? 'Salir' : 'Sala: ' + roomId }}
@@ -21,6 +30,9 @@
   <span class="version-tag">v{{ version }}</span>
 </div>
 <!-- Tablero Principal -->
+<!-- Chinchón: pantalla propia -->
+<app-chinchon *ngIf="viewGame === 'chinchon'" [gameOver]="!!gameResult"></app-chinchon>
+<ng-container *ngIf="viewGame === 'azes'">
 <div class="game-screen">
   <div class="board">  
       <!-- Aquí mostrarás las 5 cartas del rival -->
@@ -97,6 +109,7 @@
     <app-card [card]="f.card" [faceDown]="f.faceDown"></app-card>
   </div>
 </div>
+</ng-container>
 <!-- Notificaciones flotantes -->
 <app-opponent-left-modal *ngIf="showOpponentLeftModal | async" [playerName]="opponentName$ | async" (close)="showOpponentLeftModal.next(false)"></app-opponent-left-modal>
 <app-game-result-modal *ngIf="gameResult$ | async as result" [result]="result" [playerName]="playerName" (close)="closeModal()"></app-game-result-modal>

@@ -14,6 +14,8 @@ export type GameAction =
   | { type: 'draw' }
   | { type: 'play'; cardId: string; stairIdx: number }
   | { type: 'discard'; cardId: string; pileIdx: number };
+// Acciones de los juegos que no son Azes: el servidor de cada juego define cuales acepta.
+export type TableAction = { type: string; [key: string]: unknown };
 export interface ActionResult { ok?: boolean; error?: string }
 
 // Lo que sobrevive a recargar la pestaña (sessionStorage: una por pestaña, asi se puede jugar de a dos en el mismo navegador).
@@ -48,6 +50,10 @@ export class SocketService {
   won$ = new Subject<void>();
   // Movimiento del rival recien confirmado, para animarlo. Solo se emite en el momento (nunca al reconstruir).
   opponentMove$ = new Subject<MoveEffect>();
+  // Estado de sala de los juegos que no son Azes (Chinchon...): el servidor ya manda la vista de este jugador.
+  table$ = new BehaviorSubject<any | null>(null);
+  // Movimiento recien confirmado en un juego que no es Azes (de cualquiera de los dos jugadores), ya aplicado en table$.
+  tableMove$ = new Subject<any>();
   private pendingActions = new Set<(res: ActionResult) => void>();
 
   public currentPlayerId$ = new BehaviorSubject<string>("non-multiplayer");
@@ -56,7 +62,9 @@ export class SocketService {
 
   private gameStatus = new BehaviorSubject<string>("idle"); // idle | waiting | ready | full
   gameStatus$ = this.gameStatus.asObservable();
-  private lastGameId = 'azes';
+  private lastGameId = this.session?.gameId ?? 'azes';
+  /** Juego de la sala actual (o el ultimo pedido). */
+  get gameId(): string { return this.lastGameId; }
 
   constructor(private gameService: GameService, ) {
     this.socket = io(environment.apiUrl, {
@@ -84,8 +92,11 @@ export class SocketService {
     });
     // Modo autoritativo: el servidor difunde el estado completo despues de cada accion.
     this.socket.on("state", (data) => {
+      const tableMove = this.tableMoveOf(data);
       this.announceOpponentMove(data);
       this.applyServerState(data.gameState);
+      // despues de aplicar el estado: la pantalla lo dibuja y prepara el vuelo en la misma pasada
+      if (tableMove) this.tableMove$.next(tableMove);
     });
     this.socket.on("youWon", () => {
       this.won$.next();
@@ -296,7 +307,7 @@ export class SocketService {
   }
 
   // Pide una accion al servidor y espera su respuesta (ok / error). Nunca rechaza: los fallos de red vuelven como error.
-  sendAction(action: GameAction): Promise<ActionResult> {
+  sendAction(action: GameAction | TableAction): Promise<ActionResult> {
     const roomId = this.gameServerData?.roomId;
     if (!roomId || !this.socket.connected) return Promise.resolve({ error: 'offline' });
     return new Promise<ActionResult>(resolve => {
@@ -314,6 +325,8 @@ export class SocketService {
   // Avisa del movimiento del rival solo si este estado es el siguiente al que ya tengo (no un salto por reconexion),
   // la pestaña se ve y la persona no pidio menos animaciones.
   private announceOpponentMove(data: any) {
+    // los juegos que no son Azes animan por su cuenta (tableMove$): el tablero de Azes no tiene que reaccionar
+    if (data?.gameState?.gameId && data.gameState.gameId !== 'azes') return;
     const effect: MoveEffect | undefined = data?.effect;
     const prev = this.gameServerData;
     if (!effect || effect.playerId === this.socketId || !prev) return;
@@ -329,9 +342,26 @@ export class SocketService {
     this.opponentMove$.next(effect);
   }
 
+  // Efecto de un juego que no es Azes: lo animan los dos jugadores, pero solo si este estado es el siguiente al que ya
+  // tengo (no un salto por reconexion), la pestaña se ve y la persona no pidio menos animaciones.
+  private tableMoveOf(data: any): any | null {
+    const effect = data?.effect;
+    const next = data?.gameState;
+    const prev = this.gameServerData;
+    if (!effect || !next?.gameId || next.gameId === 'azes' || !prev) return null;
+    if (prev.matchId !== next.matchId || next.version !== prev.version + 1) return null;
+    if (typeof document === 'undefined' || document.visibilityState !== 'visible') return null;
+    if (typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches) return null;
+    return effect;
+  }
+
   // Estado que manda el servidor. En modo autoritativo es la unica fuente de verdad: se reemplaza todo
   // (salvo que llegue uno mas viejo que el que ya tengo) y el paso del turno sale de `phase`.
   private applyServerState(gameState: any) {
+    if (gameState?.gameId && gameState.gameId !== 'azes') {
+      this.applyTableState(gameState);
+      return;
+    }
     if (!gameState?.authoritative) {
       this.authoritative = false;
       this.updateGameState(gameState, 'full');
@@ -344,6 +374,18 @@ export class SocketService {
     this.updateGameState(gameState, 'full');
     this.currentPlayerId$.next(gameState.currentPlayerId);
     this.phase$.next(gameState.currentPlayerId === this.socketId ? (gameState.phase ?? null) : null);
+  }
+
+  // Juegos nuevos: el estado del servidor se muestra tal cual (sin mezclar con zonas locales). Un estado mas viejo se descarta.
+  private applyTableState(gameState: any) {
+    const prev = this.gameServerData;
+    if (prev?.matchId === gameState.matchId && typeof prev.version === 'number' && gameState.version < prev.version) return;
+    this.authoritative = true;
+    this.lastGameId = gameState.gameId;
+    this.gameServerData = gameState;
+    this.room$.next(gameState.roomId);
+    this.currentPlayerId$.next(gameState.currentPlayerId);
+    this.table$.next(gameState);
   }
 
   // Tras reconectar: cada lado conserva lo que solo el puede haber cambiado.
@@ -427,6 +469,7 @@ export class SocketService {
     this.opponentOffline$.next(false);
     this.authoritative = false;
     this.phase$.next(null);
+    this.table$.next(null);
     this.restoring = false;
     this.clearSession();
   }

@@ -13,6 +13,7 @@ export interface GameInfo {
 
 export const GAMES: GameInfo[] = [
   { id: 'azes', name: 'Azes', available: true },
+  { id: 'chinchon', name: 'Chinchón', available: true },
 ];
 
 export const DEFAULT_GAME_ID = 'azes';

@@ -118,6 +118,24 @@ test("discard: manda la carta al monton y pasa el turno", () => {
   assert.equal(applyAction(s, "p1", { type: "discard", cardId: "h5", pileIdx: 0 }).error, "not_your_turn");
 });
 
+test("discard: el turno pasa al siguiente asiento (preparado para 3 o 4 jugadores)", () => {
+  const s = newState();
+  s.playerHands.p3 = [card("7")];
+  s.playerDecks.p3 = [card("4")];
+  s.playerPiles.p3 = [[], [], []];
+  s.playerHands.p1 = [card("5", "h5")];
+  ok(applyAction(s, "p1", { type: "discard", cardId: "h5", pileIdx: 0 }));
+  assert.equal(s.currentPlayerId, "p2");
+  s.phase = "playing";
+  s.playerHands.p2 = [card("6", "h6")];
+  ok(applyAction(s, "p2", { type: "discard", cardId: "h6", pileIdx: 0 }));
+  assert.equal(s.currentPlayerId, "p3");
+  s.phase = "playing";
+  s.playerHands.p3 = [card("8", "h8")];
+  ok(applyAction(s, "p3", { type: "discard", cardId: "h8", pileIdx: 0 }));
+  assert.equal(s.currentPlayerId, "p1");
+});
+
 test("discard: solo cartas de la mano", () => {
   const s = newState();
   s.playerHands.p1 = [card("5", "h5")];

@@ -1,6 +1,27 @@
 import { Card } from "./card.model";
 
-export interface GameState {
+/**
+ * Sobre comun a todos los juegos: lo que la infraestructura (salas, versiones, turnos, reconexion) necesita
+ * del estado. Cada juego lo extiende con sus propios campos (Azes: GameState; Chinchon: el suyo).
+ */
+export interface RoomState {
+  roomId: string;
+  // Juego de la sala ('azes', 'chinchon'...). Lo pone server.ts al crearla; el cliente lo usa para elegir la pantalla.
+  gameId?: string;
+  currentPlayerId?: string;
+  // Contador de partidas de la sala (se incrementa en cada reparto). Lo mantiene el servidor.
+  matchId?: number;
+  // Contador de cambios de turno. Lo mantiene el servidor.
+  turn?: number;
+  // Modo autoritativo (fase 2): el servidor aplica las acciones y difunde el estado.
+  authoritative?: boolean;
+  // Contador de cambios del estado en modo autoritativo; el cliente descarta estados con version menor.
+  version?: number;
+  // Paso del turno del jugador actual; los valores los define cada juego.
+  phase?: string;
+}
+
+export interface GameState extends RoomState {
   roomId: string;
   currentPlayerId?: string;
   // Contador de partidas de la sala (se incrementa en cada reparto). Lo mantiene el servidor.

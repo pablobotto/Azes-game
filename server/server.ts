@@ -1,6 +1,6 @@
 import { createServer } from "http";
 import { Server, Socket } from "socket.io";
-import { GameState } from "./gameState.model";
+import { GameState, RoomState } from "./gameState.model";
 import { GameResult } from "./games/types";
 import { DEFAULT_GAME, GAMES, isKnownGame } from "./games/registry";
 
@@ -27,7 +27,7 @@ interface RoomMeta {
   names: Record<string, string>;
 }
 
-const roomDetail: Record<string, GameState> = {};
+const roomDetail: Record<string, RoomState> = {};
 const rooms: Record<string, string[]> = {};      // roomId -> playerIds
 const roomMeta: Record<string, RoomMeta> = {};
 const roomQueues: Record<string, RoomQueue> = {};
@@ -74,13 +74,14 @@ io.on("connection", (socket) => {
     }
     // buscar una sala del mismo juego que todavia no empezo
     let roomId = Object.keys(rooms).find(r =>
-      roomMeta[r].gameId === game && !roomMeta[r].started && rooms[r].length < 2
+      roomMeta[r].gameId === game && !roomMeta[r].started && rooms[r].length < GAMES[game].maxPlayers
     );
     if (!roomId) {
       roomId = `room${++roomCounter}`;
       rooms[roomId] = [];
       roomMeta[roomId] = { gameId: game, started: false, graceTimers: {}, names: {} };
-      roomDetail[roomId] = { ...GAMES[game].emptyState(roomId), authoritative: isAuthoritative() };
+      // solo Azes tiene todavia el camino viejo (flag AUTHORITATIVE); los juegos nuevos son siempre autoritativos
+      roomDetail[roomId] = { ...GAMES[game].emptyState(roomId), gameId: game, authoritative: game === DEFAULT_GAME ? isAuthoritative() : true };
     }
     // agregar y unirse
     rooms[roomId].push(playerId);
@@ -93,7 +94,9 @@ io.on("connection", (socket) => {
       socket.emit("identification", { socketId: playerId });
       io.to(roomId).emit("waiting", { roomId, socketId: playerId });
     }
-    if (rooms[roomId].length === 2) {
+    // Hoy la partida arranca al llenarse la sala. Para juegos con rango (2 a 4) se sumara un arranque
+    // explicito una vez alcanzado minPlayers; con min == max (Azes) es lo mismo que antes.
+    if (rooms[roomId].length === GAMES[game].maxPlayers) {
       roomMeta[roomId].started = true;
       socket.emit("identification", { socketId: playerId });
       createNewGame(roomId);
@@ -109,7 +112,7 @@ io.on("connection", (socket) => {
     const roomId = snapshot?.roomId;
     if (!isMember(roomId, playerId) || roomDetail[roomId]?.authoritative) return;
     enqueue(roomId, async () => {
-      const cur = roomDetail[roomId];
+      const cur = roomDetail[roomId] as GameState | undefined; // modo viejo: solo existe para Azes
       if (!cur) return;
       if (snapshot.matchId !== undefined && snapshot.matchId !== cur.matchId) {
         console.log(`playCard de partida vieja en ${roomId}, resincronizando a ${playerId}`);
@@ -344,7 +347,7 @@ function gameOf(roomId: string) {
   return GAMES[roomMeta[roomId]?.gameId ?? DEFAULT_GAME];
 }
 // En modo autoritativo cada jugador recibe su vista (sin la mano del rival ni el mazo central).
-function stateFor(roomId: string, forPlayerId: string): GameState {
+function stateFor(roomId: string, forPlayerId: string): RoomState {
   const state = roomDetail[roomId];
   return state.authoritative ? gameOf(roomId).viewFor(state, forPlayerId) : state;
 }
