@@ -34,6 +34,17 @@ const roomQueues: Record<string, RoomQueue> = {};
 const playerSockets: Record<string, string> = {}; // playerId -> socket.id actual
 let roomCounter = 0;
 
+// Registro de conectividad: una linea por evento, con claves fijas para filtrar en los logs de Render
+// (por ejemplo: "[net] event=disconnect"). Del playerId solo se muestran los primeros 8 caracteres.
+const tag = (id: string) => id.slice(0, 8);
+const net = (event: string, fields: Record<string, string | number | boolean | undefined> = {}) => {
+  const rest = Object.entries(fields).filter(([, v]) => v !== undefined).map(([k, v]) => `${k}=${typeof v === "string" && /\s/.test(v) ? JSON.stringify(v) : v}`);
+  console.log(["[net]", `event=${event}`, ...rest].join(" "));
+};
+// cuando se cayo cada jugador (solo de partidas en curso), para saber cuanto tardo en volver
+const offlineSince: Record<string, number> = {};
+const offlineFor = (playerId: string) => (offlineSince[playerId] ? Date.now() - offlineSince[playerId] : undefined);
+
 process.on("uncaughtException", (err) => console.error("uncaughtException:", err));
 process.on("unhandledRejection", (err) => console.error("unhandledRejection:", err));
 
@@ -47,6 +58,11 @@ io.on("connection", (socket) => {
   console.log("Cliente conectado:", socket.id, "player:", playerId);
 
   const previousSocketId = playerSockets[playerId];
+  net("connect", {
+    player: tag(playerId), transport: socket.conn.transport.name, room: findRoomOf(playerId),
+    replaced: !!previousSocketId && previousSocketId !== socket.id, // el servidor aun no habia notado la caida anterior
+    offlineMs: offlineFor(playerId),
+  });
   playerSockets[playerId] = socket.id;
   if (previousSocketId && previousSocketId !== socket.id) {
     // socket "zombie" de una conexion que el servidor aun no detecto como caida
@@ -147,6 +163,7 @@ io.on("connection", (socket) => {
       if (!cur || !meta || !cur.authoritative) { reply({ error: "bad_action" }); return; }
       if (payload.matchId !== undefined && payload.matchId !== cur.matchId) {
         console.log(`action de partida vieja en ${roomId}, resincronizando a ${playerId}`);
+        net("action_stale", { player: tag(playerId), room: roomId, game: roomMeta[roomId]?.gameId, matchId: payload.matchId, current: cur.matchId });
         sendSync(socket, roomId);
         reply({ error: "stale" });
         return;
@@ -166,6 +183,7 @@ io.on("connection", (socket) => {
       }
       if (outcome.error) {
         console.log(`action rechazada en ${roomId} de ${playerId}: ${outcome.error}`);
+        net("action_rejected", { player: tag(playerId), room: roomId, game: meta.gameId, type: payload?.type, error: outcome.error, version: cur.version, offlineMs: offlineFor(playerId) });
         sendSync(socket, roomId);
         reply({ error: outcome.error });
         return;
@@ -255,6 +273,7 @@ io.on("connection", (socket) => {
     console.log(`rejoin recibido en ${roomId} de ${playerId} (socket ${socket.id})`);
     if (typeof roomId !== "string" || !isMember(roomId, playerId)) {
       console.log(`rejoin rechazado: ${playerId} no pertenece a ${roomId}`);
+      net("rejoin_failed", { player: tag(playerId), room: typeof roomId === "string" ? roomId : undefined, why: "not_member", offlineMs: offlineFor(playerId) });
       socket.emit("rejoinFailed");
       return;
     }
@@ -262,9 +281,12 @@ io.on("connection", (socket) => {
       const cur = roomDetail[roomId];
       const meta = roomMeta[roomId];
       if (!cur || !meta || !rooms[roomId]?.includes(playerId)) {
+        net("rejoin_failed", { player: tag(playerId), room: roomId, why: "room_gone", offlineMs: offlineFor(playerId) });
         socket.emit("rejoinFailed");
         return;
       }
+      net("rejoin_ok", { player: tag(playerId), room: roomId, game: meta.gameId, offlineMs: offlineFor(playerId), version: cur.version });
+      delete offlineSince[playerId];
       clearGrace(roomId, playerId);
       socket.join(roomId);
       socket.emit("rejoined", { gameState: stateFor(roomId, playerId), socketId: playerId });
@@ -281,8 +303,16 @@ io.on("connection", (socket) => {
     });
   });
 
-  on("disconnect", () => {
+  on("disconnect", (reason?: string) => {
     console.log("Cliente desconectado:", socket.id, "player:", playerId);
+    {
+      const rid = findRoomOf(playerId);
+      net("disconnect", {
+        player: tag(playerId), reason, room: rid, game: rid ? roomMeta[rid]?.gameId : undefined,
+        phase: rid ? (roomMeta[rid]?.started ? "playing" : "waiting") : "none",
+        stale: playerSockets[playerId] !== socket.id, // true: ya volvio con otro socket
+      });
+    }
     // si el jugador ya se reconecto con otro socket, este es un residuo
     if (playerSockets[playerId] !== socket.id) return;
     delete playerSockets[playerId];
@@ -298,6 +328,7 @@ io.on("connection", (socket) => {
         return;
       }
       // partida en curso: damos un margen para reconectar antes de darlo por ido
+      offlineSince[playerId] = Date.now();
       io.to(roomId).emit("opponentOffline");
       clearGrace(roomId, playerId);
       meta.graceTimers[playerId] = setTimeout(() => {
@@ -306,6 +337,8 @@ io.on("connection", (socket) => {
           delete roomMeta[roomId].graceTimers[playerId];
           if (playerSockets[playerId]) return;
           console.log(`Gracia vencida para ${playerId} en ${roomId}`);
+          net("grace_expired", { player: tag(playerId), room: roomId, game: roomMeta[roomId]?.gameId, offlineMs: offlineFor(playerId) });
+          delete offlineSince[playerId];
           removePlayer(roomId, playerId, true);
         });
       }, GRACE_MS);
@@ -359,6 +392,7 @@ function sendToRoom(roomId: string, event: string, extra: object = {}) {
 }
 function sendSync(socket: Socket, roomId: string) {
   if (!roomDetail[roomId]) return;
+  net("sync_sent", { room: roomId, game: roomMeta[roomId]?.gameId, version: roomDetail[roomId].version });
   const forPlayer = Object.keys(playerSockets).find(pid => playerSockets[pid] === socket.id);
   socket.emit("stateSync", { gameState: forPlayer ? stateFor(roomId, forPlayer) : roomDetail[roomId] });
 }

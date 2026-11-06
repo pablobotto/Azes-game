@@ -1,187 +1,146 @@
-# Azes – Análisis, pendientes y hoja de ruta
+# Azes – Estado, pendientes y hoja de ruta
 
-Documento de trabajo con el resultado del análisis de bugs, lo ya corregido en la fase 1 (rama `feature/inprovments`) y lo que sigue.
-Restricción de base: **no se cambian las reglas del juego**. Cuando se mueva código se mueve tal cual, nunca se reescribe.
+Documento de trabajo. Reglas de base:
+- **No se cambian las reglas de Azes.** Cuando se mueve código se mueve tal cual, nunca se reescribe.
+- Los commits y los tags los hace el dueño del repo (`main` despliega solo: front en Vercel, back en Render). Los tags v1.1.0 a v1.4.0 existen solo en local.
 
-## Estado actual (v1.3.1)
+## 1. Estado actual (v1.5.0)
 
-| Etapa | Estado |
+| Área | Estado |
 |---|---|
-| Fase 1 – conectividad y reconexión | Mergeada a `main` y desplegada (front en Vercel, back en Render). Prueba manual de partida completa OK; **cortes de conexión aún sin probar en producción**. |
-| URL del backend por entorno | Hecho (`environment.ts` / `environment.prod.ts` + `fileReplacements`). |
-| Fix de build del backend en Render | Hecho (`skipLibCheck` en `server/tsconfig.json`). |
-| Versión visible junto a la sala | Hecho (se toma de `package.json`). |
-| Modo Vs CPU y su lógica | Eliminado. |
-| Fase 2 – servidor autoritativo | En curso. (a) reglas en `server/games/azes/rules.ts`. (b) hecho: acciones `draw`/`play`/`discard` en `server/games/azes/actions.ts`, con el interruptor `AUTHORITATIVE` (variable de entorno del servidor): **encendido por defecto**; con `AUTHORITATIVE=0` vuelve al modo de la fase 1 sin tocar código. `start-dev -Legacy` también lo apaga. Revancha probada local OK; reconexiones se prueban en producción. (c) hecho: estado con `version` y chequeo de las 108 cartas tras cada acción (si falla, se deshace y se registra `INVARIANTE ROTO`). (d) hecho: cada jugador recibe su vista (`server/games/azes/view.ts`): sin la mano del rival ni el mazo central. Pruebas: `cd server; npm test` (42). Persistencia ante refresh hecha (v1.3.0): el `playerId`, la sala y el nombre viven en `sessionStorage` (una por pestaña) y al recargar se vuelve a la partida con `rejoin`; el servidor devuelve el nombre del rival. Falta solo (e), ver sección 5. |
-| Fase 3 – varios juegos | En curso. Parte de servidor hecha: interfaz `GameModule` (`server/games/types.ts`), registro (`server/games/registry.ts`) y Azes como módulo (`server/games/azes/`); `server.ts` ya no tiene reglas ni reparto de Azes adentro. Cliente: desplegable de juegos en la barra superior hecho (v1.3.1, `src/app/games/game-registry.ts`; Azes por defecto, Chinchón figura como próximamente y desactivado; se bloquea al unirse). Falta el registro con carga diferida de pantallas, `SocketService` genérico, tablero a `games/azes/`) y generalizar el tipo de estado al retirar el modo viejo. Ver sección 6. |
-| Efecto de vuelo de cartas | Hecho, sin versionar: el servidor manda con cada `state` el movimiento confirmado (`effect`) y el cliente del rival anima la carta desde su mano, mazo o montón hasta su lugar (robo: cartas boca abajo desde el mazo). No se anima al reconectar ni con la pestaña oculta ni con movimiento reducido. |
-| Panel de admin (solo lectura) | Pendiente (ver sección 7). |
+| Azes | Jugable en producción. Servidor autoritativo (encendido por defecto), refresh persistente y efecto de vuelo de cartas. |
+| Chinchón | Jugable de a dos (v1.5.0). Servidor y pantalla propios. Falta pulirlo (ver sección 4). |
+| Conectividad | Fase 1 desplegada y registro `[net]` en el servidor (v1.5.0). **Hay jugadores con conexión pobre que siguen con problemas raros**; todavía no hay datos precisos (sección 3). |
+| Fase 2 – servidor autoritativo | Hecha salvo el paso (e): borrar el camino viejo (sección 5). |
+| Fase 3 – varios juegos | Servidor hecho (módulos, registro, estado de sala genérico). Cliente a medias (sección 6). |
+| Panel de admin | Pendiente, diseñado (sección 7). |
+| Pruebas | `cd server; npm test` → 79 pruebas (reglas, acciones, vistas y estado de los dos juegos). Del cliente solo se verifica que compile. |
 
-## Levantar el proyecto
+Documentos: [README.md](README.md) (cómo levantarlo) y [CHANGELOG.md](CHANGELOG.md) (qué trae cada versión).
 
-```
-.\start-dev.bat          # backend :3000 + frontend :4200 en dos ventanas
-.\start-dev.ps1 -Stop    # cierra lo que quede escuchando en 3000 y 4200
-```
+## 2. Cómo está armado
 
-Recordatorio: [socket.service.ts](src/app/services/socket.service.ts) apunta a `http://localhost:3000`. Volver a la URL de Render antes de publicar.
+- **El servidor decide.** El cliente manda intenciones (`action`: `draw`, `play`, `discard`, `close`, `nextRound`) con un ack `{ok}` o `{error}`; el servidor valida turno, paso, posesión de la carta y reglas, aplica y difunde a cada jugador **su vista** del estado.
+- **Un módulo por juego** (`server/games/<id>/`): `emptyState`, `addPlayer`, `startMatch`, `applyAction`, `viewFor`, `checkInvariant`. Registro en `server/games/registry.ts`.
+- **Infraestructura común** en `server/server.ts`: salas, cola por sala, `playerId` estable, margen de gracia de 90 s, `rejoin`, versiones, resultado, revancha y el registro `[net]`.
+- **Estado de sala**: sobre común `RoomState` (sala, juego, turno, partida, versión, fase) + campos propios de cada juego. El cliente descarta estados con versión menor que la que ya tiene. El servidor comprueba tras cada acción que no se pierdan ni se dupliquen cartas (Azes: 108; Chinchón: 54); si falla, deshace la acción y registra `INVARIANTE ROTO`.
+- **Cliente**: `SocketService` guarda la conexión, la sala y el `playerId` (en `sessionStorage`, una por pestaña). Azes alimenta `GameService`; los demás juegos publican su estado en `table$` y sus movimientos en `tableMove$`. El `board` conserva la barra superior y cambia el cuerpo según el juego (`viewGame`).
+- **Efectos de vuelo**: cada acción válida devuelve un `effect` con solo datos públicos; el cliente oculta la carta de destino, la hace volar (~0,45 s) y la muestra al llegar. No anima al reconectar, con la pestaña oculta ni con movimiento reducido.
 
----
+## 3. Conexión pobre (lo que más duele)
 
-## 1. Qué hace el diseño actual y por qué se perdían cartas
+**Hecho: registro `[net]` en el backend.** Una línea por evento, con claves fijas para filtrar en los logs de Render (por ejemplo, buscar `[net] event=disconnect`). Del `playerId` solo se ven 8 caracteres.
 
-El juego era **cliente-autoritativo**: cada `playCard` mandaba el estado entero y el servidor lo pisaba (último en llegar gana). Con conexiones inestables eso pierde cartas. Causas encontradas:
-
-1. **Reconexión con id nuevo.** El `socket.id` cambia al reconectar. El servidor renombraba las claves de mano/mazo/pilas pero el rival no se enteraba; su siguiente `playCard` volvía a pisar el estado con el id viejo y la mano del que se reconectó quedaba `undefined`. Además el pase de turno apuntaba a un id fantasma.
-2. **Snapshots atrasados.** Un mensaje del rival que llegaba a mitad del robo reemplazaba `deck`/`playerHand` locales; el bucle de robo seguía con arrays viejos.
-3. **Doble robo.** `rejoined` y `BehaviorSubject.next(Drawing)` podían disparar dos `draw` concurrentes (cartas de más, empate prematuro).
-4. **Orden de envío.** Al descartar se pasaba el turno (`changePlayers`) antes de enviar la carta descartada (`playCard`).
-
-## 2. Hecho en la fase 1 (sin cambiar reglas)
-
-| Área | Cambio |
+| Evento | Qué dice |
 |---|---|
-| Identidad | `playerId` estable generado por el cliente (auth del handshake). El servidor lo usa como id del jugador; no se renombra nada al reconectar. |
-| Escrituras | El servidor solo toma del snapshot lo que ese jugador puede modificar: sus zonas siempre; mazo central y escaleras solo si es el jugador de turno. Si algo no cuadra, responde `stateSync` con el estado correcto. |
-| Reconexión | Margen de gracia de 90 s (`GRACE_MS`). El rival ve "perdió la conexión, esperando…" y no el modal de abandono. Al volver: `rejoined`, el cliente conserva sus cartas y reenvía su estado. |
-| Turnos | Contador `turn` en el servidor; `changePlayers` lleva `fromTurn` y es idempotente (un reenvío no se aplica dos veces). |
-| Resultado | Si el rival ganó o empató mientras uno estaba offline, el resultado se reenvía al volver. |
-| Detección | `pingInterval` 5 s / `pingTimeout` 8 s; reconecta al volver internet o al despertar la pestaña; quien está en la sala de espera se vuelve a anotar solo. |
-| Orden | El descarte se envía antes de pasar el turno (`GameStepService.canDiscard` + `discard`). |
-| Robo | Candado `drawing` contra el doble `draw`. |
-| Servidor | Ids de sala con contador (antes podían pisar una sala activa); handlers con try/catch y validación de payload; limpieza de colas y salas. |
-| Plataforma | `joinRoom(gameId)` y salas separadas por juego (hoy solo `azes`). |
-| Seguridad | `rejoin` valida con el `playerId` del handshake, no con lo que mande el cliente. |
+| `connect` | jugador, transporte, sala si ya estaba en una, `replaced=true` si el servidor aún no había notado la caída anterior, `offlineMs` desde que se cayó |
+| `disconnect` | motivo (`transport close`, `ping timeout`, `transport error`…), sala, juego, si estaba esperando o jugando, `stale=true` si ya volvió con otro socket |
+| `rejoin_ok` / `rejoin_failed` | tiempo que estuvo fuera y, si falló, por qué (`not_member`, `room_gone`) |
+| `grace_expired` | se pasó de los 90 s y se lo dio por ido |
+| `action_rejected` / `action_stale` | tipo de acción, error y versión; `offlineMs` si acababa de volver |
+| `sync_sent` | el servidor forzó una resincronización |
 
-Prueba de humo ya hecha contra el servidor real: snapshot malo no pisa al rival, corte y vuelta recupera la mano, intruso rechazado, cambio de turno reenviado se aplica una sola vez.
+Cómo leerlo: muchos `disconnect` con `ping timeout` de un mismo jugador = su red es inestable; `rejoin_ok` con `offlineMs` alto = tarda en volver; `action_rejected` con `wrong_step` o `not_your_turn` justo después de un `connect` = jugadas repetidas tras perder la confirmación.
 
-## 3. Checklist de prueba manual (dos pestañas)
+**Pendiente (sin orden definido):**
+- **Acciones con identificador.** Si el servidor aplica una jugada pero se pierde el ack, el cliente muestra "el servidor no respondió", la persona reintenta y el reintento sale como error de paso o de turno aunque el estado ya cambió. Con un id por acción el servidor reconoce el reintento y responde ok.
+- **Transporte.** El cliente está forzado a `websocket`, sin plan B (polling). En redes o proxies problemáticos puede no recuperarse.
+- **Tiempos.** `ACTION_TIMEOUT_MS` (8 s), `pingInterval` 5 s / `pingTimeout` 8 s y `GRACE_MS` 90 s fueron elegidos sin datos; ajustar con lo que muestre el registro.
+- **Revancha perdida.** `requestRematch` no se reenvía si el rival estaba offline.
+- **Pruebas de corte** (sección 9): hechas en local solo en parte; en producción, ninguna; Chinchón no se probó con cortes.
 
-- [ ] Partida normal completa: robar, jugar en escaleras, descartar, pasar turno, ganar.
-- [ ] Cortar el wifi de una pestaña a mitad de **su turno** (jugando) y volver antes de 90 s.
-- [ ] Cortar durante el **robo** (primeras 650 ms y entre cartas).
-- [ ] Cortar justo al **descartar**.
-- [ ] Cortar durante el **turno del rival** y volver después de que cambió el turno.
-- [ ] Cortar más de 90 s: el rival debe ver el modal de abandono.
-- [ ] Cortar a quien está en "Esperando rival…" y volver.
-- [ ] Ganar / empatar mientras el rival está offline y que reciba el resultado al volver.
-- [ ] Revancha.
-- [ ] Verificar siempre: nadie pierde ni duplica cartas (suman 108 entre mazo, manos, mazos de jugador, pilas y escaleras).
-- [ ] Botón de sincronizar (hoy comentado en `board.html`): reactivarlo y comprobar que corrige un desfase.
+## 4. Chinchón
 
-## 4. Bugs y deudas que siguen abiertos
+Decisiones del dueño: 2 jugadores por ahora (estructura lista para 2 a 4), un solo mazo de póker de 54 cartas (52 + 2 comodines), se cierra con menos de 5 puntos sueltos, cerrar sin sueltas resta 10, el chinchón gana la partida al instante, se juega por rondas hasta 100 (quien llega pierde).
 
-| Gravedad | Dónde | Detalle |
-|---|---|---|
-| Media | Información oculta | Ambos clientes reciben el estado completo (mano del rival y mazo central). Se puede hacer trampa mirando la red. **Resuelto en modo autoritativo** (paso (d)); sigue así en el modo viejo. |
-| Media | Rematch | `rematchAccepted` reparte de nuevo pero no resetea `currentPlayerId` ni los pasos del cliente; hereda turno y paso de la partida anterior. Decidir si es intencional. |
-| Media | Revancha perdida | `requestRematch` no se reenvía si el rival estaba offline. |
-| Baja | `ngOnDestroy` | Hace `socket.disconnect()` sobre un singleton y nunca reconecta. |
-| Baja | Reglas | `canPlaceOnStair` muta `numericValue` del comodín; la IA lo usa en simulaciones con rollback y deja valores residuales. |
-| Baja | Deprecaciones | `*ngIf` / `*ngFor` en `board.html` (migrar a `@if` / `@for`). |
-| Aviso | Config | URL del backend en `socket.service.ts` está en `localhost`. |
+**Reglas implementadas** (`server/games/chinchon/`): mano de 7; en el turno se roba (mazo o tope del descarte) y se descarta o se cierra; combinaciones = pierna (3 o 4 del mismo valor, palos distintos) y escalera (3 o más seguidas del mismo palo; el As vale solo 1); el comodín completa cualquier combinación y suelto vale 25; valor de las sueltas: As 1, 2 a 10 su número, J/Q/K 10; los rivales suman sus sueltas; mazo agotado = se mezcla el descarte menos el tope; después de cada ronda ambos confirman para repartir la siguiente y rota el repartidor.
 
-## 5. Fase 2 – Servidor autoritativo
+**Pendiente:**
+- **Pegar cartas sueltas** a las combinaciones de quien cierra. Hoy esas cartas cuentan como sueltas. Propuesta: automático en el servidor (probar qué cartas se pegan y quedarse con la opción que deja menos puntos); sin pantalla ni acción nuevas.
+- **Mostrar combinaciones durante la ronda** (hoy solo al final).
+- **Chinchón con comodín:** hoy solo cierra con −10; decidir si cuenta como chinchón.
+- **3 y 4 jugadores:** el servidor ya rota por asiento; falta arranque con rango (empezar con los presentes) y la pantalla con más rivales.
+- **Cerrar arrastrando** y otros detalles de la mano (reordenar ya funciona).
+- Eventual mejora visual con un canvas propio; el servidor no cambia.
 
-Objetivo: que sea **imposible** perder una carta, aunque el cliente falle.
+## 5. Fase 2 – Servidor autoritativo (paso (e))
 
-1. **Acciones en vez de snapshots.** El cliente envía intenciones (`play {cardId, stairIdx}`, `discard {cardId, pileIdx}`, `endTurn`). El servidor valida turno, paso, posesión de la carta y reglas, aplica y difunde el resultado.
-2. **Reglas solo en el servidor** (`server/games/azes/`), copiando `GameRulesService` y el flujo de `GameStepService` sin modificar su lógica. El cliente manda la acción y el servidor responde ok / no permitido; no hace falta compartir código. Si más adelante molesta la latencia del aviso, se agrega una validación rápida solo visual en el cliente.
-3. **Robo en el servidor.** Al empezar el turno el servidor roba hasta 5 y resuelve el reshuffle de escaleras completas (13 cartas terminadas en K o comodín). Desaparece el bucle con `await` del cliente.
-4. **Estado versionado.** Cada cambio incrementa `version`. El cliente ignora versiones viejas y pide `resync` si detecta un hueco.
-5. **Invariante anti-pérdida.** Tras cada acción, el servidor comprueba que haya 108 cartas (2 mazos de 52 + 4 comodines) sin ids repetidos. Si no, rechaza la acción y lo registra: una carta perdida pasa a ser un error visible.
-6. **Vista por jugador.** Al rival solo se le manda la cantidad de cartas en mano y la carta superior de su mazo. El mazo central se manda como cantidad.
-7. **Persistencia de sesión.** `playerId` en `sessionStorage` + restauración del tablero → sobrevive al refresh.
-8. **Pruebas.** Casos de caracterización del comportamiento actual (jugadas válidas/ inválidas, comodín, reshuffle, victoria, empate) que deben pasar idénticos antes y después de mover las reglas. Más una simulación de corte/reconexión en cada paso del turno.
+(a) reglas en el servidor, (b) acciones y robo detrás del interruptor `AUTHORITATIVE`, (c) estado versionado + invariante, (d) vista por jugador: **hechos**. Falta **(e): borrar el camino viejo**:
+- servidor: los manejadores `playCard`, `changePlayers`, `win`, `tie`, `opponentPlayed`, el handshake de `handleRejoined` del cliente y el interruptor `AUTHORITATIVE`;
+- cliente: `GameStepService` y el flujo por snapshots de `GameService`/`SocketService`.
 
-Orden sugerido: (a) mover reglas + pruebas de caracterización, (b) acciones y robo en servidor detrás de un flag, (c) estado versionado + invariante, (d) vista por jugador, (e) quitar el camino viejo.
+Se hace **después de unas dos semanas de uso intensivo en producción** (hoy el servidor ya ignora esos mensajes en salas autoritativas, así que dejarlo no rompe nada). Al borrarlo se generalizan también `ActionOutcome` y `MoveEffect`, que siguen siendo de Azes.
 
 ## 6. Fase 3 – Plataforma de varios juegos
 
-Idea: un lobby con la lista de juegos en la barra superior; cambiar de juego = cambiar el tablero.
+Hecho: `GameModule<S>` con `minPlayers`/`maxPlayers`, registro, estado de sala genérico, desplegable de juegos, `gameId` por sala, pantalla por juego.
 
-**Servidor**
-
-```ts
-interface GameModule<State, Action> {
-  id: string;                 // 'azes'
-  name: string;
-  minPlayers: number; maxPlayers: number;
-  createState(playerIds: string[]): State;
-  applyAction(state: State, playerId: string, action: Action):
-      { state: State } | { error: string };
-  viewFor(state: State, playerId: string): unknown;   // oculta lo privado
-  isFinished(state: State): { winnerId?: string } | null;
-}
-```
-
-- Registro `GAMES: Record<string, GameModule>`; `joinRoom(gameId)` ya existe y separa las salas por juego.
-- Infraestructura común (salas, cola por sala, gracia/reconexión, `playerId`, resync, rematch) vive fuera del módulo y se reutiliza.
-
-**Cliente**
-
-- Registro de juegos: `{ id, name, icon, component: () => import('./games/azes/azes-board') }`, con carga diferida.
-- `LobbyComponent` / barra superior con la lista; al elegir, llama a `joinRoom(gameId)` y monta el componente del juego.
-- `SocketService` pasa a ser genérico (conexión, sala, reconexión, estado); cada juego tiene su `GameStore` y su tablero.
-- El tablero actual se mueve a `games/azes/` sin cambiar su lógica.
-
-Prerrequisito: la fase 2, porque un `GameModule` con `applyAction` es lo que hace que agregar un juego no implique reescribir la red.
-
-### 6.1 Chinchón (segundo juego)
-
-Decisiones del dueño: 2 jugadores por ahora (estructura lista para 2 a 4: `minPlayers`/`maxPlayers` en el módulo, turno por asiento). Un solo mazo de póker: 52 cartas + 2 comodines = 54. Se cierra con menos de 5 puntos sueltos. Cerrar sin ninguna carta suelta = −10; el chinchón (escalera de 7 cartas del mismo palo) gana la partida al instante. Se juega por rondas hasta 100: quien llega pierde. Pantalla (canvas) propia, sin reutilizar el tablero de Azes.
-
-Reglas a implementar (supuestos a confirmar marcados con ?):
-- Mano de 7 cartas. Cada turno: robar (mazo o tope del descarte) y descartar una.
-- Combinaciones: pierna (3 o 4 cartas del mismo valor) y escalera (3 o más del mismo palo, consecutivas). El As es 1 (? no cierra K‑A‑2).
-- Valor de las sueltas: As 1, 2 a 7 su número, J/Q/K 10 (? el 8 y el 9 valen 8 y 9 y no 10, como en el mazo póker). Comodín: completa cualquier combinación; suelto vale 25 (?).
-- Cerrar: al descartar, las sueltas (sin contar la descartada) suman menos de 5 (? "menos de 5" estricto, o 5 o menos). Los rivales suman sus sueltas; quien cierra suma las suyas. Si cierra con todas las cartas combinadas (sin ninguna suelta): −10. Si las 7 forman una sola escalera del mismo palo (chinchón): gana la partida de inmediato.
-- Fin: el primero que llega o pasa 100 pierde; gana quien tiene menos puntos.
-- Mazo agotado: se mezcla el descarte menos el tope.
-
-Orden de trabajo: (1) ✅ estado de sala genérico (`RoomState` + `GameModule<S>`); (2) ✅ módulo `server/games/chinchon/` (reglas puras, acciones, vista por jugador, invariante de 54 cartas, 28 pruebas), registrado y probado con dos clientes reales; sus salas son siempre autoritativas; (3) ✅ primera versión del cliente: `components/chinchon/` (componentes Angular reutilizando `app-card`), habilitado en `game-registry.ts`. `SocketService` publica el estado de los juegos que no son Azes en `table$` (el servidor marca `gameId`); el tablero (`board`) conserva la barra superior y cambia el cuerpo según `viewGame`. Pendiente: probarlo en el navegador, animaciones propias y mostrar combinaciones mientras se juega.
-
-Acciones del servidor: `draw {from: 'deck'|'discard'}`, `discard {cardId}`, `close {cardId}`, `nextRound`. Fases: `drawing` → `discarding` → `roundEnd`. Errores nuevos: `cannot_close`, `deck_empty`. Simplificaciones a revisar: al cerrar no se pueden pegar cartas sueltas del rival a las combinaciones de quien cierra; el chinchón con comodín no cuenta como chinchón (solo cierra con −10).
+Falta:
+- registro de pantallas con **carga diferida** (`component: () => import(...)`) y mover el tablero de Azes a `games/azes/`;
+- `SocketService` genérico (hoy tiene un camino para Azes y otro para el resto);
+- arranque con rango de jugadores y lista de asientos/nombres de más de un rival (`displayOpponentName`, `opponentLeft`… asumen uno);
+- barra superior: cuando haya más juegos, sacar **Unirse** y el desplegable una vez dentro de la sala;
+- resultados más ricos que ganó/perdió/empate (puntajes finales).
 
 ## 7. Panel de admin (solo lectura, sin base de datos)
 
-Objetivo: ver **en vivo** qué salas hay y quién juega en cada mesa. Todo sale de la memoria del servidor (`rooms`, `roomMeta`), así que no hace falta base de datos. No depende de la fase 2 ni de la 3.
+Objetivo: ver **en vivo** qué salas hay y quién juega en cada mesa, desde la memoria del servidor. Encaja con el registro de la sección 3. No depende de las fases 2 ni 3.
 
 **Decisiones tomadas**
+- El panel va en el **frontend** (Angular, rutas `/admin` y `/administracion`): login y una pantalla de **solo lectura** con las salas en un sidebar.
+- **Restricción por IP en el backend** (lista de IPs permitidas, leyendo `X-Forwarded-For` porque Render pone un proxy). La página es pública, pero sin permiso la API contesta 403. Una restricción solo en el front no protegería nada.
+- El servidor expone `/admin/api/login` y `/admin/api/rooms`; socket.io sigue en `/socket.io`.
 
-- **El panel va en el frontend** (Angular, rutas `/admin` y `/administracion`): una pantalla de login y una pantalla de **solo lectura** con las salas en un sidebar.
-- **Restricción por IP en el backend:** el servidor tiene una lista de IPs permitidas (se lee `X-Forwarded-For`, porque Render pone un proxy delante). La página de Angular es pública, pero sin permiso la API contesta 403 y no muestra nada. Una restricción solo en el front no protegería nada.
-- El servidor expone `/admin/api/login` y `/admin/api/rooms` (JSON); socket.io sigue en `/socket.io`.
+**Qué muestra** (nada de cartas ni manos): por sala, id, juego, estado (esperando / jugando / terminada), hora de inicio y número de partida; por jugador, nombre, conectado o en gracia y de quién es el turno; totales de salas, jugadores y partidas en curso. Se actualiza sola cada pocos segundos. Sin botones para cerrar salas ni expulsar. Los nombres los escribe cualquiera: se muestran como texto, nunca como HTML.
 
-**Qué muestra** (nada de cartas ni manos)
+**Seguridad:** solo HTTPS; clave guardada como hash (`scrypt` con sal, `timingSafeEqual`) con un script para generarlo y sin la clave en el repo; clave larga (frase de 5 o 6 palabras al azar); sesión con token aleatorio de 32 bytes en memoria que vence a los 30 minutos y viaja en `Authorization` (el front lo guarda solo en memoria); máximo 5 intentos fallidos por IP y bloqueo de 15 minutos; `Cache-Control: no-store` y `X-Content-Type-Options: nosniff`; sin `playerId` completos; cada login queda en el log con la IP; a mediano plazo, el hash en `ADMIN_PASSWORD_HASH` (variable de entorno). Una clave fija en el código retrasa a un atacante, no lo frena: por eso la clave larga y la variable de entorno son lo más importante.
 
-| Dato | Detalle |
-|---|---|
-| Sala | id, juego (`azes`), estado: esperando / jugando / terminada, hora de inicio, número de partida (`matchId`) |
-| Jugadores | nombre de cada uno, si está conectado o en período de gracia, de quién es el turno |
-| Totales | salas activas, jugadores conectados, partidas en curso |
+**Pasos:** (1) guardar los nombres en `roomMeta` (hoy ya se guardan en `roomMeta.names`); (2) endpoints con login, sesión, lista de IPs y límite de intentos; (3) pantallas de login y de salas; (4) pruebas de seguridad (clave mala, bloqueo, sesión vencida, IP no permitida); (5) hash a variable de entorno.
 
-Se actualiza sola cada pocos segundos (sondeo). Sin botones para cerrar salas ni expulsar, al menos al principio. El servidor hoy no guarda los nombres (solo los reenvía con `displayOpponentName`): hay que guardarlos en `roomMeta`. Los nombres los escribe cualquiera, así que se muestran como texto, nunca como HTML (evita XSS).
+## 8. Deudas y bugs conocidos
 
-**Seguridad**
+| Gravedad | Dónde | Detalle |
+|---|---|---|
+| Media | Revancha de Azes | `rematchAccepted` reparte de nuevo pero no resetea del todo turno y pasos del cliente (en modo autoritativo mejoró). Decidir si es intencional. |
+| Media | Revancha perdida | `requestRematch` no se reenvía si el rival estaba offline (ver sección 3). |
+| Baja | `ngOnDestroy` | El tablero hace `socket.disconnect()` sobre un singleton y nunca reconecta. |
+| Baja | Reglas de Azes | `canPlaceOnStair` muta `numericValue` del comodín. Es el comportamiento original y se conserva. |
+| Baja | Plantillas | `*ngIf` / `*ngFor` en `board.html` y `chinchon.html`: migrar a `@if` / `@for`. |
+| Baja | Presupuesto | `board.scss` pasa el aviso de 4 kB (el límite que rompe el build es 8 kB). |
+| Baja | Logs de diagnóstico | Quedan `console.debug('[fx]…')` en `socket.service.ts` y `board.ts` desde "logs de prueba"; ya no hacen falta. |
+| Baja | Botón de sincronizar | Está comentado en `board.html`. |
 
-1. Solo HTTPS (Render ya lo da).
-2. **Clave guardada como hash, no en texto:** `scrypt` con sal, comparado con `crypto.timingSafeEqual`. El hash va en una constante del código (por ahora) y el texto de la clave nunca se escribe en el repo. Un script `npm run admin:hash` genera el hash.
-3. **Clave larga:** una frase de 5 o 6 palabras al azar (20+ caracteres). Es lo que protege si el repo es público, porque el hash se puede intentar romper sin conexión.
-4. **Sesión:** token aleatorio de 32 bytes guardado en memoria del servidor, vence a los 30 minutos sin uso. Como el front está en otro dominio, viaja en la cabecera `Authorization` y el front lo guarda solo en memoria (no en `localStorage`). CORS abierto únicamente para el dominio del front en estas rutas.
-5. **Contra fuerza bruta:** máximo 5 intentos fallidos por IP, después bloqueo de 15 minutos; mismo mensaje de error exista o no el usuario.
-6. **Cabeceras:** `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`; el front con `Content-Security-Policy` estricta.
-7. **Sin datos de más:** no se muestran los `playerId` completos; cada login (ok o fallido) queda en el log con la IP.
-8. **Cuando se pueda:** mover el hash a la variable de entorno `ADMIN_PASSWORD_HASH` en Render para sacarlo del repo.
+## 9. Checklist de prueba manual (dos pestañas)
 
-**Límite a tener presente:** una clave fija en el código es cómoda pero débil frente a una filtración del repo; el hash retrasa a un atacante, no lo frena. Por eso la clave larga (3) y la variable de entorno (8) son lo más importante a mediano plazo.
+Para **Azes** y para **Chinchón** (en Chinchón, que el total siga siendo 54 cartas):
+- [ ] Partida normal completa hasta ganar o perder.
+- [ ] Cortar el wifi de una pestaña a mitad de **su turno** y volver antes de 90 s.
+- [ ] Cortar durante el **robo** y justo al **descartar**.
+- [ ] Cortar durante el **turno del rival** y volver después de que cambió el turno.
+- [ ] Cortar más de 90 s: el rival debe ver el aviso de abandono.
+- [ ] Cortar a quien está en "Esperando rival…" y volver.
+- [ ] Ganar o empatar mientras el rival está offline y que reciba el resultado al volver.
+- [ ] Recargar la pestaña a mitad de partida (vuelve a la partida con su mano).
+- [ ] Revancha.
+- [ ] Efecto de vuelo con las dos ventanas visibles; nada queda oculto después.
+- [ ] Mirar los `[net]` del servidor durante las pruebas anteriores (que cada corte deje su `disconnect` y su `rejoin_ok`).
 
-**Pasos sugeridos:** (1) guardar nombres en `roomMeta`; (2) endpoints con login, sesión, lista de IPs y límite de intentos; (3) pantallas de login y de salas en Angular; (4) pruebas de seguridad (clave mala, bloqueo, sesión vencida, IP no permitida); (5) pasar el hash a variable de entorno.
+## 10. Pendientes de proceso
 
-## 8. Pendientes de proceso
+- Subir los tags si se quiere: `git push origin v1.1.0 v1.2.0 v1.3.0 v1.4.0` (hoy solo en local).
+- Probar en producción los cortes de conexión (sección 9).
+- Antes de publicar, confirmar que el frontend apunta a Render (`src/enviroments/environment.prod.ts`).
 
-- ~~Merge de `feature/inprovments` a `main`~~ hecho. Las ramas viejas ya se borraron en local y en origen.
-- ~~URL del backend por entorno~~ hecho.
-- Subir el tag de la version actual: `git push origin v1.1.0` (hoy solo existe en local).
-- Probar en producción los cortes de conexión (modo avión durante turno, robo, descarte y turno del rival).
-- Sacar `server/node_modules` del repositorio (está versionado) y agregarlo al `.gitignore`.
+## 11. Qué sigue (a definir)
+
+Bloques candidatos, sin orden fijado:
+1. **Conexión pobre**: acciones con identificador, plan B de transporte, ajustar tiempos con los datos del registro, pruebas de corte en Chinchón (sección 3).
+2. **Chinchón**: pegar cartas sueltas, marcar combinaciones durante la ronda (sección 4).
+3. **Cerrar la fase 2**: paso (e), cuando termine el período de prueba (sección 5).
+4. **Plataforma**: carga diferida, `SocketService` genérico, más de dos jugadores (sección 6).
+5. **Panel de admin** (sección 7).
+6. **Deudas chicas** (sección 8).
+
+## Anexo: por qué se perdían cartas (fase 1)
+
+Antes del servidor autoritativo el juego era **cliente-autoritativo**: cada `playCard` mandaba el estado entero y el servidor lo pisaba (último en llegar gana). Causas encontradas y ya corregidas: (1) la reconexión cambiaba el `socket.id` y el rival seguía usando el id viejo; (2) un snapshot atrasado del rival pisaba mazo y mano locales en pleno robo; (3) `rejoined` y el cambio de paso disparaban dos robos en paralelo; (4) al descartar se pasaba el turno antes de enviar la carta. En la fase 1 se resolvió con `playerId` estable, escrituras acotadas por jugador, margen de gracia, turnos idempotentes, detección rápida de caídas y un candado contra el doble robo; en la fase 2, con el servidor autoritativo, el estado versionado y el chequeo de cartas.

@@ -1,59 +1,59 @@
-# AzesGame
+# Azes Game
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 20.1.4.
+Juegos de cartas para dos personas en línea. Hoy hay dos:
 
-## Development server
+- **Azes**: escaleras de A a K en el centro, con mazo propio, tres montones de descarte y comodines.
+- **Chinchón**: mazo de póker con 2 comodines, mano de 7, se cierra con menos de 5 puntos sueltos y se juega por rondas hasta 100.
 
-To start a local development server, run:
+El servidor es el que decide: el cliente pide una acción (robar, jugar, descartar, cerrar) y el servidor la valida, la aplica y le manda a cada jugador su vista del estado. Así, aunque la conexión sea mala, no se pierden cartas.
 
-```bash
-ng serve
+## Piezas
+
+| Parte | Dónde | Con qué |
+|---|---|---|
+| Frontend | `src/` | Angular 20 (sin zone.js), socket.io-client. Se despliega en Vercel. |
+| Backend | `server/` | Node + socket.io, TypeScript. Se despliega en Render. |
+| Juegos del servidor | `server/games/<juego>/` | Un módulo por juego (reglas, acciones, vista por jugador, invariante de cartas). |
+| Pantallas | `src/app/components/board/` (Azes) y `src/app/components/chinchon/` | Cada juego tiene su pantalla; la barra superior es común. |
+
+Los dos se despliegan solos desde `main`.
+
+## Levantarlo en local
+
+```
+.\start-dev.bat          # backend :3000 + frontend :4200, en dos ventanas
+.\start-dev.ps1 -Stop    # cierra lo que quede escuchando en 3000 y 4200
+.\start-dev.ps1 -Legacy  # backend sin modo autoritativo (solo Azes, como la fase 1)
 ```
 
-Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
+A mano:
 
-## Code scaffolding
-
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
-
-```bash
-ng generate component component-name
+```
+cd server && npm install && npm run dev     # backend
+npm install && ng serve                     # frontend, http://localhost:4200
 ```
 
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
+El backend no se recarga solo: si cambiás algo en `server/`, hay que reiniciarlo. En desarrollo el frontend apunta a `http://localhost:3000` y en producción a Render (`src/enviroments/`).
 
-```bash
-ng generate --help
+## Pruebas
+
+```
+cd server && npm test        # reglas, acciones, vistas y estado de ambos juegos
+ng build                     # compila el frontend
 ```
 
-## Building
+## Para sumar un juego
 
-To build the project run:
+1. Crear `server/games/<id>/` con su `GameModule` (ver `server/games/types.ts`) y registrarlo en `server/games/registry.ts`.
+2. Crear su pantalla en `src/app/components/` y mostrarla desde `board.html` según `viewGame`.
+3. Agregarlo a `src/app/games/game-registry.ts` (el nombre del desplegable, de hasta 10 letras).
 
-```bash
-ng build
-```
+## Diagnóstico de conexión
 
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
+El servidor escribe líneas `[net] event=...` con las conexiones, caídas (con el motivo), reconexiones y jugadas rechazadas. Se pueden filtrar en los logs de Render; ver el detalle en [ROADMAP.md](ROADMAP.md).
 
-## Running unit tests
+## Más
 
-To execute unit tests with the [Karma](https://karma-runner.github.io) test runner, use the following command:
-
-```bash
-ng test
-```
-
-## Running end-to-end tests
-
-For end-to-end (e2e) testing, run:
-
-```bash
-ng e2e
-```
-
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
-
-## Additional Resources
-
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+- [ROADMAP.md](ROADMAP.md): estado, pendientes y decisiones.
+- [CHANGELOG.md](CHANGELOG.md): qué trae cada versión.
+- Regla de base: **no se cambian las reglas de Azes**; cuando se mueve código, se mueve tal cual.
