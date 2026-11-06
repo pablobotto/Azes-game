@@ -4,12 +4,12 @@ Documento de trabajo. Reglas de base:
 - **No se cambian las reglas de Azes.** Cuando se mueve código se mueve tal cual, nunca se reescribe.
 - Los commits y los tags los hace el dueño del repo (`main` despliega solo: front en Vercel, back en Render). Los tags v1.1.0 a v1.4.0 existen solo en local.
 
-## 1. Estado actual (v1.5.0)
+## 1. Estado actual (v1.5.1)
 
 | Área | Estado |
 |---|---|
 | Azes | Jugable en producción. Servidor autoritativo (encendido por defecto), refresh persistente y efecto de vuelo de cartas. |
-| Chinchón | Jugable de a dos (v1.5.0). Servidor y pantalla propios. Falta pulirlo (ver sección 4). |
+| Chinchón | Jugable de a dos (v1.5.0), con colada manual desde la v1.5.1. Servidor y pantalla propios. Falta pulirlo (ver sección 4). |
 | Conectividad | Fase 1 desplegada y registro `[net]` en el servidor (v1.5.0). **Hay jugadores con conexión pobre que siguen con problemas raros**; todavía no hay datos precisos (sección 3). |
 | Fase 2 – servidor autoritativo | Hecha salvo el paso (e): borrar el camino viejo (sección 5). |
 | Fase 3 – varios juegos | Servidor hecho (módulos, registro, estado de sala genérico). Cliente a medias (sección 6). |
@@ -53,10 +53,11 @@ Cómo leerlo: muchos `disconnect` con `ping timeout` de un mismo jugador = su re
 
 Decisiones del dueño: 2 jugadores por ahora (estructura lista para 2 a 4), un solo mazo de póker de 54 cartas (52 + 2 comodines), se cierra con menos de 5 puntos sueltos, cerrar sin sueltas resta 10, el chinchón gana la partida al instante, se juega por rondas hasta 100 (quien llega pierde).
 
-**Reglas implementadas** (`server/games/chinchon/`): mano de 7; en el turno se roba (mazo o tope del descarte) y se descarta o se cierra; combinaciones = pierna (3 o 4 del mismo valor, palos distintos) y escalera (3 o más seguidas del mismo palo; el As vale solo 1); el comodín completa cualquier combinación y suelto vale 25; valor de las sueltas: As 1, 2 a 10 su número, J/Q/K 10; los rivales suman sus sueltas; mazo agotado = se mezcla el descarte menos el tope; después de cada ronda ambos confirman para repartir la siguiente y rota el repartidor.
+**Reglas implementadas** (`server/games/chinchon/`): mano de 7; en el turno se roba (mazo o tope del descarte) y se descarta o se cierra; combinaciones = pierna (3 o 4 del mismo valor, palos distintos) y escalera (3 o más seguidas del mismo palo; el As vale solo 1); el comodín completa cualquier combinación y suelto vale 25; valor de las sueltas: As 1, 2 a 10 su número, J/Q/K 10; los rivales suman sus sueltas; **colada manual**: tras el cierre, quien no cerró arrastra sus cartas sueltas a las combinaciones de quien cerró (acción `attach {cardId, meldIdx}`; el servidor comprueba que la combinación siga siendo válida; la carta colada lleva borde dorado y baja los puntos al instante) hasta que confirma; no hay colada tras un chinchón; **el resultado de la partida se decide cuando los dos confirman** (así la colada puede evitar llegar a 100); mazo agotado = se mezcla el descarte menos el tope; después de cada ronda ambos confirman para repartir la siguiente y rota el repartidor.
 
 **Pendiente:**
-- **Pegar cartas sueltas** a las combinaciones de quien cierra. Hoy esas cartas cuentan como sueltas. Propuesta: automático en el servidor (probar qué cartas se pegan y quedarse con la opción que deja menos puntos); sin pantalla ni acción nuevas.
+- **Colada con más de 2 jugadores:** hoy hay un solo borde dorado para todos; con 3 o 4 habría que distinguir quién coló cada carta.
+- El comodín se muestra siempre como comodín, sin indicar qué carta representa (decisión del dueño: no se cambia).
 - **Mostrar combinaciones durante la ronda** (hoy solo al final).
 - **Chinchón con comodín:** hoy solo cierra con −10; decidir si cuenta como chinchón.
 - **3 y 4 jugadores:** el servidor ya rota por asiento; falta arranque con rango (empezar con los presentes) y la pantalla con más rivales.
@@ -108,6 +109,7 @@ Objetivo: ver **en vivo** qué salas hay y quién juega en cada mesa, desde la m
 | Baja | Plantillas | `*ngIf` / `*ngFor` en `board.html` y `chinchon.html`: migrar a `@if` / `@for`. |
 | Baja | Presupuesto | `board.scss` pasa el aviso de 4 kB (el límite que rompe el build es 8 kB). |
 | Baja | Logs de diagnóstico | Quedan `console.debug('[fx]…')` en `socket.service.ts` y `board.ts` desde "logs de prueba"; ya no hacen falta. |
+| Media (solo en desarrollo) | Consola de Windows | Hacer clic o seleccionar texto en la ventana del backend la pausa, y Node (que escribe los logs de forma síncrona) se congela sin dar error: el puerto sigue abierto pero nadie contesta, y los clientes muestran problemas de conexión. Se arregla apretando Enter en esa ventana. `start-dev.ps1` ahora apaga ese modo al abrir cada ventana. No pasa en Render. |
 | Baja | Botón de sincronizar | Está comentado en `board.html`. |
 
 ## 9. Checklist de prueba manual (dos pestañas)
@@ -135,7 +137,7 @@ Para **Azes** y para **Chinchón** (en Chinchón, que el total siga siendo 54 ca
 
 Bloques candidatos, sin orden fijado:
 1. **Conexión pobre**: acciones con identificador, plan B de transporte, ajustar tiempos con los datos del registro, pruebas de corte en Chinchón (sección 3).
-2. **Chinchón**: pegar cartas sueltas, marcar combinaciones durante la ronda (sección 4).
+2. **Chinchón**: marcar combinaciones durante la ronda y lo demás de la sección 4.
 3. **Cerrar la fase 2**: paso (e), cuando termine el período de prueba (sección 5).
 4. **Plataforma**: carga diferida, `SocketService` genérico, más de dos jugadores (sección 6).
 5. **Panel de admin** (sección 7).

@@ -147,7 +147,8 @@
 .who { font-weight: 700; font-size: 17px; overflow-wrap: anywhere; }
 .cards { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
 .group { display: flex; }
-.group app-card + app-card { margin-left: -30px; }
+.group .c + .c { margin-left: -30px; }
+.group .c { display: block; border-radius: 8px; }
 .group.loose:not(:empty) { padding-left: 12px; border-left: 2px solid rgba(255, 255, 255, 0.35); }
 .points { text-align: center; line-height: 1.25; }
 .points .delta { font-size: 26px; font-weight: 700; }
@@ -185,3 +186,13 @@ app-card { color: #1a1a1a; }
 }
 .fx-ghost app-card { display: block; box-shadow: 0 6px 10px rgba(0, 0, 0, 0.35); border-radius: 6px; }
 @media (prefers-reduced-motion: reduce) { .fx-ghost { transition: none; } }
+
+/* Colada: las combinaciones de quien cerro aceptan cartas; las ya coladas llevan borde dorado */
+.group.drop-ready { outline: 2px dashed rgba(245, 215, 110, 0.55); outline-offset: 4px; border-radius: 8px; }
+.group.drop-ready.cdk-drop-list-receiving { outline-color: #f5d76e; background: rgba(245, 215, 110, 0.15); }
+/* sin z-index: subirla taparia a la carta de al lado (las cartas se superponen en la combinacion) */
+.c.attached { outline: 3px solid #f5d76e; outline-offset: -1px; box-shadow: 0 0 10px rgba(245, 215, 110, 0.8); }
+.c.draggable { cursor: grab; }
+.c.draggable:hover { transform: translateY(-5px); }
+.group.loose.cdk-drop-list-dragging .c:not(.cdk-drag-placeholder) { transition: none; }
+.hint { margin: 0; text-align: center; font-size: 14px; opacity: 0.9; }

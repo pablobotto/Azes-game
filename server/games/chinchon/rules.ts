@@ -53,6 +53,31 @@ export function isMeld(cards: Card[]): boolean {
   return false;
 }
 
+/**
+ * Ordena una combinacion valida para mostrarla: la escalera de menor a mayor con el comodin en el hueco que
+ * rellena (4, comodin, 6), y los comodines sobrantes al final (o al principio si arriba no hay lugar); la pierna
+ * con los comodines al final. Solo cambia el orden en que se muestra, no el calculo de puntos.
+ */
+export function arrangeMeld(cards: Card[]): Card[] {
+  const jokers = cards.filter(isJoker);
+  const rest = cards.filter(c => !isJoker(c));
+  if (rest.length === 0) return [...cards];
+  if (rest.length >= 2 && rest.every(c => c.numericValue === rest[0].numericValue)) return [...rest, ...jokers]; // pierna
+  rest.sort((a, b) => a.numericValue - b.numericValue);
+  const out: Card[] = [];
+  let spare = [...jokers];
+  rest.forEach((c, i) => {
+    if (i > 0) {
+      const gap = c.numericValue - rest[i - 1].numericValue - 1;
+      out.push(...spare.splice(0, gap));
+    }
+    out.push(c);
+  });
+  const room = 13 - rest[rest.length - 1].numericValue; // lugar para extender hacia arriba (la K es el tope)
+  out.push(...spare.splice(0, room));
+  return [...spare, ...out];
+}
+
 export interface Split {
   loose: number;          // puntos de las cartas sueltas
   melds: Card[][];        // combinaciones elegidas
@@ -88,7 +113,7 @@ export function bestSplit(hand: Card[]): Split {
   const used = chosen.reduce((a, m) => a | m, 0);
   return {
     loose: pts,
-    melds: chosen.map(m => hand.filter((_, i) => m & (1 << i))),
+    melds: chosen.map(m => arrangeMeld(hand.filter((_, i) => m & (1 << i)))),
     looseCards: hand.filter((_, i) => !(used & (1 << i))),
   };
 }

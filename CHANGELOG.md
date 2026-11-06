@@ -2,11 +2,18 @@
 
 Qué trae cada versión. Las fechas son las del commit que la subió.
 
+## 1.5.1 — 2026-11-06
+- Registro de conectividad en el servidor (`[net] event=...`): conexiones, caídas con motivo, reconexiones con el tiempo que estuvo fuera, jugadas rechazadas y resincronizaciones.
+- **Chinchón: colada manual.** Después del cierre, quien no cerró arrastra sus cartas sueltas a las combinaciones de quien cerró para restar puntos; la carta colada se marca con borde dorado. El servidor comprueba que la combinación siga siendo válida. El resultado de la partida se decide cuando los dos confirman el fin de ronda (así la colada puede evitar llegar a 100); un chinchón sigue ganando al instante y no admite colada.
+- Chinchón: las combinaciones con comodín se muestran ordenadas (el comodín en el hueco que rellena).
+- Chinchón: al robar o descartar, las demás cartas de la mano se deslizan a su nuevo lugar en vez de saltar, y la carta que vuela aparece en el mismo cuadro en que sale de su lugar.
+- Chinchón: una carta colada ya no tapa a su vecina dentro de la combinación.
+- Desarrollo: `start-dev.ps1` apaga el modo "seleccionar" de la consola de Windows (hacer clic en la ventana del backend lo congelaba hasta apretar Enter) y ya no da error al poner el título de las ventanas.
+
 ## 1.5.0 — 2026-11-03
 - **Chinchón** completo y jugable de a dos: robar del mazo o del descarte, descartar, cerrar con menos de 5 puntos sueltos, −10 por cerrar sin sueltas, chinchón gana la partida, rondas hasta 100, revancha.
 - Pantalla propia con arrastrar para acomodar la mano, fin de ronda con las combinaciones de cada uno y efecto de vuelo de cartas en los dos clientes.
 - El estado de sala es genérico (`RoomState` + `GameModule<S>`): cada juego define el suyo. El servidor ya usa `minPlayers`/`maxPlayers` del módulo y el turno pasa al siguiente asiento (preparado para 3 o 4 jugadores).
-- Registro de conectividad en el servidor (`[net] event=...`): conexiones, caídas con motivo, reconexiones con el tiempo que estuvo fuera, jugadas rechazadas y resincronizaciones.
 - Azes: el tablero ya no reacciona a los efectos de otros juegos.
 
 ## 1.4.0 — 2026-11-01

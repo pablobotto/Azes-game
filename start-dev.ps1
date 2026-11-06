@@ -38,8 +38,24 @@ if (-not (Test-Path (Join-Path $serverDir 'node_modules'))) {
     Push-Location $serverDir; npm install; Pop-Location
 }
 
-Start-Process powershell -WorkingDirectory $serverDir -ArgumentList '-NoExit', '-Command', ('$Host.UI.RawUI.WindowTitle = "Azes - Backend :3000"; ' + $(if ($Legacy) { '' } else { '$env:AUTHORITATIVE = "1"; ' }) + 'npm run dev')
-Start-Process powershell -WorkingDirectory $root -ArgumentList '-NoExit', '-Command', '$Host.UI.RawUI.WindowTitle = "Azes - Frontend :4200"; npm start'
+# Si se hace clic dentro de una consola de Windows (o se selecciona texto) entra el modo "seleccionar" y pausa la
+# escritura en pantalla: el backend escribe los logs de forma sincrona y se CONGELA hasta apretar Enter, sin dar error
+# (el puerto sigue abierto pero nadie contesta). Cada ventana apaga ese modo al arrancar.
+$noQuickEdit = @'
+$k = Add-Type -Namespace Win -Name K -PassThru -MemberDefinition '[DllImport("kernel32.dll")] public static extern System.IntPtr GetStdHandle(int n); [DllImport("kernel32.dll")] public static extern bool GetConsoleMode(System.IntPtr h, out uint m); [DllImport("kernel32.dll")] public static extern bool SetConsoleMode(System.IntPtr h, uint m);'
+$h = $k::GetStdHandle(-10); $m = [uint32]0
+if ($k::GetConsoleMode($h, [ref]$m)) { [void]$k::SetConsoleMode($h, [uint32](($m -bor 0x80) - ($m -band 0x40))) }
+'@
+
+# El comando va codificado: al pasarlo como texto, PowerShell pierde las comillas dobles (y el titulo daba error).
+function Start-DevWindow([string]$dir, [string]$title, [string]$command) {
+    $script = $noQuickEdit + "`n`$Host.UI.RawUI.WindowTitle = '$title'`n" + $command
+    $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
+    Start-Process powershell -WorkingDirectory $dir -ArgumentList '-NoExit', '-EncodedCommand', $enc
+}
+
+Start-DevWindow $serverDir 'Azes - Backend :3000' ($(if ($Legacy) { '' } else { '$env:AUTHORITATIVE = ''1''' + "`n" }) + 'npm run dev')
+Start-DevWindow $root 'Azes - Frontend :4200' 'npm start'
 
 Write-Host 'Backend:  http://localhost:3000'
 Write-Host 'Frontend: http://localhost:4200  (tarda unos segundos en compilar)'

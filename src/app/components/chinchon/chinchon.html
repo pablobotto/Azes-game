@@ -46,8 +46,16 @@
           <div class="player-row" *ngFor="let r of roundRows(s, rivalName)">
             <div class="who">{{ r.name }}</div>
             <div class="cards">
-              <div class="group" *ngFor="let g of r.melds"><app-card *ngFor="let c of g" [card]="c"></app-card></div>
-              <div class="group loose"><app-card *ngFor="let c of r.loose" [card]="c"></app-card></div>
+              <!-- las combinaciones de quien cerro reciben las cartas coladas; las coladas llevan borde -->
+              <div class="group" *ngFor="let g of r.melds; let i = index" cdkDropList [id]="r.isCloser ? 'meld-' + i : 'own-' + r.id + '-' + i"
+                   [cdkDropListDisabled]="!r.isCloser || !canAttach(s)" [class.drop-ready]="r.isCloser && canAttach(s)" (cdkDropListDropped)="attach($event, s)">
+                <span class="c" *ngFor="let c of g" [class.attached]="isAttached(s, c)"><app-card [card]="c"></app-card></span>
+              </div>
+              <!-- mis sueltas se arrastran a las combinaciones de quien cerro -->
+              <div class="group loose" cdkDropList [id]="'loose-' + r.id" cdkDropListSortingDisabled [cdkDropListConnectedTo]="meldIds(s, rivalName)">
+                <span class="c" *ngFor="let c of r.loose" cdkDrag [cdkDragData]="c" [cdkDragDisabled]="r.id !== me || !canAttach(s)"
+                      [class.draggable]="r.id === me && canAttach(s)"><app-card [card]="c"></app-card></span>
+              </div>
             </div>
             <div class="points">
               <div class="delta">{{ r.delta > 0 ? '+' + r.delta : r.delta }}</div>
@@ -56,6 +64,8 @@
             </div>
           </div>
         </div>
+        <p class="hint" *ngIf="canAttach(s)">Podés <b>colar</b> tus cartas sueltas: arrastralas a las combinaciones de {{ rivalName }} para restar puntos. Cuando termines, confirmá.</p>
+        <p class="hint" *ngIf="!gameOver && s.last.closerId === me && !s.last.chinchon">{{ rivalName }} puede colar cartas en tus combinaciones antes de seguir.</p>
         <button *ngIf="!gameOver" class="next" (click)="nextRound()" [disabled]="iAmReady(s)">
           {{ iAmReady(s) ? 'Esperando al rival…' : 'Siguiente ronda' }}
         </button>

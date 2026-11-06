@@ -8,13 +8,14 @@ import { SocketService } from '../../services/socket.service';
 import { NotificationService } from '../../services/notification.service';
 
 /** Resumen de un jugador al terminar la ronda (todo viene del servidor, aca solo se arma para mostrarlo). */
-interface RoundRow { id: string; name: string; melds: Card[][]; loose: Card[]; points: number; delta: number; total: number; }
+interface RoundRow { id: string; name: string; isCloser: boolean; melds: Card[][]; loose: Card[]; points: number; delta: number; total: number; }
 
 /** Carta que vuela por encima de la mesa mientras se anima un movimiento. */
 interface FlyingCard { card: Card; faceDown: boolean; x0: number; y0: number; x1: number; y1: number; moving: boolean; }
 const CARD_W = 60;
 const CARD_H = 90;
 const FLY_MS = 450;
+const SLIDE_MS = 260;
 const BACK: Card = { suit: '♠', value: '?', numericValue: 0, id: 'fx-back', faceUp: false };
 
 @Component({
@@ -99,12 +100,15 @@ export class ChinchonComponent implements OnInit, OnDestroy {
   canDraw(s: any): boolean { return this.isMyTurn(s) && s.phase === 'drawing'; }
   canDiscard(s: any): boolean { return this.isMyTurn(s) && s.phase === 'discarding'; }
 
-  private async act(action: { type: string; [k: string]: unknown }): Promise<boolean> {
+  private async act(action: { type: string; [k: string]: unknown }, illegalMsg?: string): Promise<boolean> {
     if (this.busy) return false;
     this.busy = true;
     try {
       const res = await this.socket.sendAction(action);
-      if (res.error) this.notifications.show(ChinchonComponent.errors[res.error] ?? '⚠ Movimiento no permitido');
+      if (res.error) {
+        const msg = res.error === 'illegal_move' && illegalMsg ? illegalMsg : ChinchonComponent.errors[res.error];
+        this.notifications.show(msg ?? '⚠ Movimiento no permitido');
+      }
       return !res.error;
     } finally {
       this.busy = false;
@@ -136,22 +140,48 @@ export class ChinchonComponent implements OnInit, OnDestroy {
   nextRound() { this.act({ type: 'nextRound' }); }
   iAmReady(s: any): boolean { return (s.ready ?? []).includes(this.me); }
 
-  /** Filas del resumen de fin de ronda: combinaciones, sueltas y puntos de cada jugador. */
-  roundRows(s: any, rivalName: string | null): RoundRow[] {
-    if (!s.last) return [];
-    return Object.keys(s.hands).map(id => {
-      const melds: Card[][] = s.last.melds[id] ?? [];
+  // Las filas se recuerdan mientras el estado no cambie: si se armaran de nuevo en cada pasada, el arrastre de la colada
+  // perderia la carta que se esta moviendo.
+  private rowsMemo: { state: any; name: string | null; rows: RoundRow[]; meldIds: string[] } | null = null;
+  private rowsOf(s: any, rivalName: string | null) {
+    if (this.rowsMemo && this.rowsMemo.state === s && this.rowsMemo.name === rivalName) return this.rowsMemo;
+    const last = s.last;
+    const rows: RoundRow[] = !last ? [] : Object.keys(s.hands).map(id => {
+      const melds: Card[][] = last.melds[id] ?? [];
       const inMeld = new Set(melds.flat().map(c => c.id));
       return {
         id,
         name: id === this.me ? this.myName : (rivalName ?? 'Rival'),
+        isCloser: id === last.closerId,
         melds,
-        loose: (s.last.hands[id] as Card[]).filter(c => !inMeld.has(c.id)),
-        points: s.last.loose[id],
-        delta: s.last.delta[id],
+        // las que ya se colaron salen de las sueltas (ahora estan en la combinacion de quien cerro)
+        loose: (last.hands[id] as Card[]).filter(c => !inMeld.has(c.id) && !last.attached?.[c.id]),
+        points: last.loose[id],
+        delta: last.delta[id],
         total: s.scores[id],
       };
-    }).sort((a, b) => Number(a.id === this.me) - Number(b.id === this.me));
+    }).sort((a: RoundRow, b: RoundRow) => Number(a.id === this.me) - Number(b.id === this.me)); // el nuestro, abajo
+    const meldIds = last ? (last.melds[last.closerId] ?? []).map((_: Card[], i: number) => 'meld-' + i) : [];
+    this.rowsMemo = { state: s, name: rivalName, rows, meldIds };
+    return this.rowsMemo;
+  }
+  /** Filas del resumen de fin de ronda: combinaciones, sueltas y puntos de cada jugador. */
+  roundRows(s: any, rivalName: string | null): RoundRow[] { return this.rowsOf(s, rivalName).rows; }
+  /** Ids de las combinaciones de quien cerro: a donde se arrastran las sueltas para colarlas. */
+  meldIds(s: any, rivalName: string | null): string[] { return this.rowsOf(s, rivalName).meldIds; }
+
+  /** Quien no cerro puede colar sus sueltas hasta que confirma la ronda (y si no fue un chinchon ni termino la partida). */
+  canAttach(s: any): boolean {
+    return s.phase === 'roundEnd' && !!s.last && !s.last.chinchon && s.last.closerId !== this.me && !this.iAmReady(s) && !this.gameOver;
+  }
+  isAttached(s: any, card: Card): boolean { return !!s.last?.attached?.[card.id]; }
+
+  /** Soltar una carta suelta sobre una combinacion de quien cerro: pide la colada (el servidor decide si encaja). */
+  async attach(event: CdkDragDrop<Card[]>, s: any) {
+    const card: Card | undefined = event.item.data;
+    if (!card || event.previousContainer === event.container || !event.container.id.startsWith('meld-')) return;
+    const meldIdx = Number(event.container.id.slice('meld-'.length));
+    await this.act({ type: 'attach', cardId: card.id, meldIdx }, '⚠ Esa carta no encaja en esa combinación');
   }
   closerName(s: any, rivalName: string | null): string {
     return s.last?.closerId === this.me ? 'Cerraste vos' : `Cerró ${rivalName ?? 'tu rival'}`;
@@ -169,7 +199,43 @@ export class ChinchonComponent implements OnInit, OnDestroy {
     return { card: { ...card, faceUp: true }, faceDown, x0: from.x - CARD_W / 2, y0: from.y - CARD_H / 2, x1: to.x - CARD_W / 2, y1: to.y - CARD_H / 2, moving: false };
   }
 
-  /** Llega el movimiento confirmado (el estado nuevo ya esta aplicado): ocultar la carta de destino y animar. */
+  // posicion de cada carta de las dos manos (para que las demas se deslicen cuando entra o sale una)
+  private handRects(): Map<string, DOMRect> {
+    const rects = new Map<string, DOMRect>();
+    document.querySelectorAll<HTMLElement>('.my-hand .slot, .rival-hand app-card').forEach(el => {
+      const id = el.dataset['cardId'];
+      if (id) rects.set(id, el.getBoundingClientRect());
+    });
+    return rects;
+  }
+
+  /**
+   * Cuando entra o sale una carta, la mano se vuelve a centrar y las demas saltarian de golpe. Se las lleva de su
+   * lugar anterior al nuevo con una transicion (usa la propiedad `translate`, que no pisa el `transform` del arrastre).
+   */
+  private slideHands(before: Map<string, DOMRect>) {
+    const moved: HTMLElement[] = [];
+    document.querySelectorAll<HTMLElement>('.my-hand .slot, .rival-hand app-card').forEach(el => {
+      const old = el.dataset['cardId'] ? before.get(el.dataset['cardId']!) : undefined;
+      if (!old) return;
+      const now = el.getBoundingClientRect();
+      const dx = old.left - now.left, dy = old.top - now.top;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+      el.style.transition = 'none';
+      el.style.translate = `${dx}px ${dy}px`;
+      moved.push(el);
+    });
+    if (moved.length === 0) return;
+    void document.body.offsetHeight; // fija el punto de partida antes de animar
+    moved.forEach(el => { el.style.transition = `translate ${SLIDE_MS}ms ease-in-out`; el.style.translate = '0px 0px'; });
+    setTimeout(() => moved.forEach(el => { el.style.transition = ''; el.style.translate = ''; }), SLIDE_MS + 40);
+  }
+
+  /**
+   * Llega el movimiento confirmado (el estado nuevo ya esta aplicado). Todo lo visible se prepara en este mismo
+   * instante, antes de que el navegador dibuje: se oculta la carta de destino, las demas se deslizan y la que vuela
+   * ya esta en su punto de partida. Asi no hay un cuadro intermedio con la carta "perdida".
+   */
   private onMove(e: any) {
     const s = this.socket.table$.value;
     if (!s || !e) return;
@@ -182,37 +248,46 @@ export class ChinchonComponent implements OnInit, OnDestroy {
       destId = hand[hand.length - 1]?.id; // la nueva queda al final de la mano
     }
     if (!destId) return;
-    this.hidden.add(destId);
     const id = destId;
-    setTimeout(() => this.animate(e, id, mine), 0);
-  }
-
-  private async animate(e: any, destId: string, mine: boolean) {
     const ghosts: FlyingCard[] = [];
     try {
-      this.cd.detectChanges(); // dibujar el estado nuevo para medir donde quedo la carta
-      const to = this.centerOf(this.cardEl(destId));
+      const before = this.handRects();           // como estaba la mesa antes de dibujar el estado nuevo
+      this.hidden.add(id);
+      this.cd.detectChanges();                   // dibuja el estado nuevo ya (la carta de destino, oculta)
+      this.slideHands(before);                   // las demas cartas se deslizan en vez de saltar
+      const to = this.centerOf(this.cardEl(id));
       const handPos = this.centerOf(document.querySelector(mine ? '.my-hand' : '.rival-hand'));
       const deckPos = this.centerOf(document.querySelector('.deck-pile app-card') ?? document.querySelector('.deck-pile'));
       const discardPos = this.centerOf(document.querySelector('.discard-pile app-card') ?? document.querySelector('.discard-pile .empty-slot'));
       if (e.kind === 'draw' && to) {
         const from = e.from === 'discard' ? discardPos : deckPos;
-                // de mi propio mazo si conozco la carta (esta en mi mano): viaja boca arriba; la del rival, de dorso
-        const state = this.socket.table$.value;
-        const known: Card | undefined = e.card ?? (mine && state ? this.myHand(state).find(c => c.id === destId) : undefined);
+        // de mi propio mazo si conozco la carta (esta en mi mano): viaja boca arriba; la del rival, de dorso
+        const known: Card | undefined = e.card ?? (mine ? this.myHand(s).find(c => c.id === id) : undefined);
         if (from) ghosts.push(this.ghost(known ?? BACK, !known, from, to));
       } else if (e.kind === 'discard' && to) {
         const own = mine && this.discardFrom?.id === e.card.id ? this.discardFrom : null;
         const from = own ? { x: own.x, y: own.y } : handPos;
         if (from) ghosts.push(this.ghost(e.card, false, from, to));
       }
-      if (ghosts.length === 0) return;
-      this.flying = [...this.flying, ...ghosts];
-      this.cd.detectChanges();
-      await new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r())));
-      ghosts.forEach(g => g.moving = true);
-      this.cd.detectChanges();
-      await new Promise(r => setTimeout(r, FLY_MS + 10));
+      if (ghosts.length) {
+        this.flying = [...this.flying, ...ghosts];
+        this.cd.detectChanges();                 // la carta que vuela ya esta en su lugar de partida en este mismo cuadro
+      }
+    } catch (err) {
+      console.warn('No se pudo preparar el movimiento', err);
+    }
+    this.fly(ghosts, id);
+  }
+
+  /** Mueve las cartas que vuelan y, al terminar, deja todo en su lugar. */
+  private async fly(ghosts: FlyingCard[], destId: string) {
+    try {
+      if (ghosts.length) {
+        await new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+        ghosts.forEach(g => g.moving = true);
+        this.cd.detectChanges();
+        await new Promise(r => setTimeout(r, FLY_MS + 10));
+      }
     } catch (err) {
       console.warn('No se pudo animar el movimiento', err);
     } finally {

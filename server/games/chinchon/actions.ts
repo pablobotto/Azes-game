@@ -3,8 +3,10 @@
  *
  * Flujo de un turno: 'drawing' -> draw (del mazo o del tope del descarte) -> 'discarding' (8 cartas) ->
  *   discard (pasa el turno) | close (descarta y cierra si las sueltas restantes suman menos de 5).
- * Fin de ronda: 'roundEnd' con las manos a la vista; cuando todos mandan nextRound se reparte la siguiente.
- * Fin de partida: quien llega o pasa 100 pierde (gana el de menos puntos), o un chinchon gana al instante.
+ * Fin de ronda: 'roundEnd' con las manos a la vista. Quien no cerro puede "colar" (attach) sus cartas sueltas en las
+ * combinaciones de quien cerro, a mano, hasta que confirma con nextRound; cuando todos confirman se reparte la siguiente.
+ * Fin de partida: se decide al confirmar todos (la colada puede cambiar los puntos): quien llega o pasa 100 pierde
+ * (gana el de menos puntos). Un chinchon gana al instante, sin colada.
  */
 import { Card } from "../../card.model";
 import { RoomState } from "../../gameState.model";
@@ -16,6 +18,7 @@ export type ChinchonAction =
   | { type: "draw"; from: "deck" | "discard" }
   | { type: "discard"; cardId: string }
   | { type: "close"; cardId: string }
+  | { type: "attach"; cardId: string; meldIdx: number }
   | { type: "nextRound" };
 
 export interface RoundSummary {
@@ -25,6 +28,7 @@ export interface RoundSummary {
   melds: Record<string, Card[][]>;
   loose: Record<string, number>;   // puntos sueltos de cada uno
   delta: Record<string, number>;   // lo que suma (o resta) cada uno a su puntaje
+  attached: Record<string, string>; // cartas coladas: id de la carta -> jugador que la colo (en las combinaciones de quien cerro)
 }
 
 export interface ChinchonState extends RoomState {
@@ -85,7 +89,7 @@ function takeFromHand(hand: Card[], cardId: unknown): number {
 /** Cierra la ronda: puntua, y devuelve el resultado de la partida si termino. */
 function endRound(state: ChinchonState, closerId: string): ActionOutcome {
   const players = seats(state);
-  const summary: RoundSummary = { closerId, chinchon: rules.isChinchon(state.hands[closerId]), hands: {}, melds: {}, loose: {}, delta: {} };
+  const summary: RoundSummary = { closerId, chinchon: rules.isChinchon(state.hands[closerId]), hands: {}, melds: {}, loose: {}, delta: {}, attached: {} };
   for (const id of players) {
     const split = rules.bestSplit(state.hands[id]);
     summary.hands[id] = state.hands[id].map(c => ({ ...c, faceUp: true }));
@@ -98,13 +102,25 @@ function endRound(state: ChinchonState, closerId: string): ActionOutcome {
   state.phase = "roundEnd";
   state.ready = [];
 
-  if (summary.chinchon) return { result: { type: "win", winnerId: closerId } };
-  if (players.some(id => state.scores[id] >= rules.TARGET_SCORE)) {
-    const lowest = Math.min(...players.map(id => state.scores[id]));
-    const winners = players.filter(id => state.scores[id] === lowest);
-    return winners.length === 1 ? { result: { type: "win", winnerId: winners[0] } } : { result: { type: "tie" } };
-  }
-  return {};
+  // el chinchon gana al instante; en los demas casos el resultado se decide cuando todos confirman (despues de la colada)
+  return summary.chinchon ? { result: { type: "win", winnerId: closerId } } : {};
+}
+
+/** Resultado de la partida con los puntajes actuales, o null si se sigue jugando. */
+function matchResult(state: ChinchonState): ActionOutcome["result"] | null {
+  const players = seats(state);
+  if (!players.some(id => state.scores[id] >= rules.TARGET_SCORE)) return null;
+  const lowest = Math.min(...players.map(id => state.scores[id]));
+  const winners = players.filter(id => state.scores[id] === lowest);
+  return winners.length === 1 ? { type: "win", winnerId: winners[0] } : { type: "tie" };
+}
+
+/** Cartas sueltas de un jugador al terminar la ronda: las que no estan en sus combinaciones ni ya se colaron. */
+export function looseCardsOf(state: ChinchonState, playerId: string): Card[] {
+  const last = state.last;
+  if (!last) return [];
+  const inMeld = new Set((last.melds[playerId] ?? []).flat().map(c => c.id));
+  return (last.hands[playerId] ?? []).filter(c => !inMeld.has(c.id) && !last.attached[c.id]);
 }
 
 /** Aplica la accion sobre el estado (lo muta solo si la accion es valida). */
@@ -117,7 +133,29 @@ export function applyAction(
   if (a.type === "nextRound") {
     if (state.phase !== "roundEnd") return { error: "wrong_step" };
     if (!state.ready.includes(playerId)) state.ready.push(playerId);
-    if (state.ready.length === seats(state).length) dealRound(state, shuffle);
+    if (state.ready.length === seats(state).length) {
+      const result = matchResult(state);
+      if (result) return { result }; // la partida termina; la mesa queda como esta para ver el resultado
+      dealRound(state, shuffle);
+    }
+    return {};
+  }
+
+  // Colada (manual): quien no cerro pega una carta suelta a una combinacion de quien cerro, si la combinacion sigue
+  // siendo valida. Las cartas siguen en su mano: solo cambia el resumen de la ronda y los puntos.
+  if (a.type === "attach") {
+    const last = state.last;
+    if (state.phase !== "roundEnd" || !last || last.chinchon) return { error: "wrong_step" };
+    if (playerId === last.closerId || state.ready.includes(playerId)) return { error: "wrong_step" };
+    const meld = typeof a.meldIdx === "number" ? last.melds[last.closerId][a.meldIdx] : undefined;
+    const card = typeof a.cardId === "string" ? looseCardsOf(state, playerId).find(c => c.id === a.cardId) : undefined;
+    if (!meld || !card || !rules.isMeld([...meld, card])) return { error: "illegal_move" };
+    last.melds[last.closerId][a.meldIdx] = rules.arrangeMeld([...meld, card]);
+    last.attached[card.id] = playerId;
+    const points = rules.cardPoints(card);
+    last.loose[playerId] -= points;
+    last.delta[playerId] -= points;
+    state.scores[playerId] -= points;
     return {};
   }
 

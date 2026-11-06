@@ -171,14 +171,17 @@ test("chinchon gana la partida al instante", () => {
   assert.equal(s.last!.chinchon, true);
 });
 
-test("llegar a 100 pierde: gana el de menos puntos", () => {
+test("llegar a 100 pierde: se decide al confirmar los dos, no al cerrar", () => {
   const s = table({ deck: hand("2♣", "A♣") });
   s.scores.p2 = 95;
   s.hands.p1 = hand("3♠", "4♠", "5♠", "9♥", "9♦", "9♣", "2♦").map((x, i) => ({ ...x, id: `p1-${i}` }));
   applyAction(s, "p1", { type: "draw", from: "deck" });
-  const out = applyAction(s, "p1", { type: "close", cardId: "p1-6" });
-  assert.deepEqual(out.result, { type: "win", winnerId: "p1" });
+  const closed = applyAction(s, "p1", { type: "close", cardId: "p1-6" });
+  assert.equal(closed.result, undefined, "al cerrar todavia se puede colar");
   assert.ok(s.scores.p2 >= 100);
+  assert.deepEqual(applyAction(s, "p1", { type: "nextRound" }), {});
+  assert.deepEqual(applyAction(s, "p2", { type: "nextRound" }).result, { type: "win", winnerId: "p1" });
+  assert.equal(s.phase, "roundEnd", "la mesa queda para ver el resultado");
 });
 
 test("fin de ronda: cuando los dos confirman se reparte la siguiente con otro repartidor", () => {
@@ -247,4 +250,75 @@ test("invariante: detecta cartas perdidas y repetidas", () => {
   const t = newMatch();
   t.deck[0] = { ...t.hands.p1[0] };
   assert.match(checkInvariant(t)!, /repetidas/);
+});
+
+/** Mesa en fin de ronda: p1 cerro con 3♠4♠5♠ y 9♥9♦9♣; p2 tiene 6♠ y 9♠ sueltas (y otras combinadas o no). */
+function closedTable(): ChinchonState {
+  const t = table({ deck: hand("A♣", "K♥") });
+  t.hands.p1 = hand("3♠", "4♠", "5♠", "9♥", "9♦", "9♣", "A♦").map((x, i) => ({ ...x, id: `p1-${i}` }));
+  t.hands.p2 = hand("6♠", "9♠", "K♦", "Q♣", "2♥", "8♦", "10♦").map((x, i) => ({ ...x, id: `p2-${i}` }));
+  applyAction(t, "p1", { type: "draw", from: "deck" }); // roba K♥
+  assert.equal(applyAction(t, "p1", { type: "close", cardId: "K♥" }).error, undefined);
+  return t;
+}
+const meldOf = (t: ChinchonState, ids: string[]) => t.last!.melds.p1.findIndex(g => ids.every(id => g.some(c => c.id === id)));
+
+test("colada: una carta suelta se pega a la combinacion de quien cerro y baja los puntos", () => {
+  const t = closedTable();
+  const before = { loose: t.last!.loose.p2, score: t.scores.p2 };
+  const run = meldOf(t, ["p1-0"]); // 3♠4♠5♠
+  assert.equal(applyAction(t, "p2", { type: "attach", cardId: "p2-0", meldIdx: run }).error, undefined); // 6♠ prolonga 3-4-5
+  assert.deepEqual(t.last!.melds.p1[run].map(c => c.id), ["p1-0", "p1-1", "p1-2", "p2-0"]);
+  assert.equal(t.last!.attached["p2-0"], "p2");
+  assert.equal(t.last!.loose.p2, before.loose - 6);
+  assert.equal(t.scores.p2, before.score - 6);
+  assert.equal(t.hands.p2.length, 7, "las cartas siguen en la mano: no cambia el total");
+  // la pierna de 9 admite el 9♠ (cuarto palo)
+  assert.equal(applyAction(t, "p2", { type: "attach", cardId: "p2-1", meldIdx: meldOf(t, ["p1-3"]) }).error, undefined);
+});
+
+test("colada: se pueden sumar varias en la misma escalera, siempre que siga siendo valida", () => {
+  const t = closedTable();
+  t.hands.p2[2] = { ...c("7♠"), id: "p2-2" }; // reemplazo K♦ por 7♠
+  t.last!.hands.p2[2] = { ...c("7♠"), id: "p2-2" };
+  const run = meldOf(t, ["p1-0"]);
+  assert.equal(applyAction(t, "p2", { type: "attach", cardId: "p2-0", meldIdx: run }).error, undefined); // 6♠
+  assert.equal(applyAction(t, "p2", { type: "attach", cardId: "p2-2", meldIdx: run }).error, undefined); // 7♠
+  assert.equal(t.last!.melds.p1[run].length, 5);
+});
+
+test("colada: se rechaza lo que no encaja o no es tuyo", () => {
+  const t = closedTable();
+  const run = meldOf(t, ["p1-0"]);
+  assert.equal(applyAction(t, "p2", { type: "attach", cardId: "p2-3", meldIdx: run }).error, "illegal_move", "Q♣ no prolonga 3-4-5");
+  assert.equal(applyAction(t, "p2", { type: "attach", cardId: "p2-0", meldIdx: 9 }).error, "illegal_move", "combinacion inexistente");
+  assert.equal(applyAction(t, "p2", { type: "attach", cardId: "p1-6", meldIdx: run }).error, "illegal_move", "carta del rival");
+  assert.equal(applyAction(t, "p2", { type: "attach", cardId: "p2-0" , meldIdx: -1 }).error, "illegal_move");
+  assert.equal(applyAction(t, "p2", { type: "attach", cardId: 5, meldIdx: run } as any).error, "illegal_move");
+  assert.equal(applyAction(t, "p1", { type: "attach", cardId: "p1-6", meldIdx: run }).error, "wrong_step", "quien cerro no cuela");
+  applyAction(t, "p2", { type: "attach", cardId: "p2-0", meldIdx: run });
+  assert.equal(applyAction(t, "p2", { type: "attach", cardId: "p2-0", meldIdx: run }).error, "illegal_move", "ya colada");
+});
+
+test("colada: despues de confirmar ya no se puede, ni fuera de fin de ronda, ni tras un chinchon", () => {
+  const t = closedTable();
+  const run = meldOf(t, ["p1-0"]);
+  applyAction(t, "p2", { type: "nextRound" });
+  assert.equal(applyAction(t, "p2", { type: "attach", cardId: "p2-0", meldIdx: run }).error, "wrong_step");
+  assert.equal(applyAction(table(), "p1", { type: "attach", cardId: "p1-0", meldIdx: 0 }).error, "wrong_step");
+  const ch = table({ deck: hand("K♥") });
+  ch.hands.p1 = hand("3♥", "4♥", "5♥", "6♥", "7♥", "8♥", "9♥").map((x, i) => ({ ...x, id: `p1-${i}` }));
+  applyAction(ch, "p1", { type: "draw", from: "deck" });
+  applyAction(ch, "p1", { type: "close", cardId: "K♥" });
+  assert.equal(applyAction(ch, "p2", { type: "attach", cardId: "p2-0", meldIdx: 0 }).error, "wrong_step");
+});
+
+test("colada: puede salvar de llegar a 100", () => {
+  const t = closedTable();
+  t.scores.p2 = 99; // pierde si no cuela
+  applyAction(t, "p2", { type: "attach", cardId: "p2-0", meldIdx: meldOf(t, ["p1-0"]) }); // 6♠ vale 6
+  assert.equal(t.scores.p2, 93);
+  applyAction(t, "p1", { type: "nextRound" });
+  assert.deepEqual(applyAction(t, "p2", { type: "nextRound" }), {}, "no llega a 100: sigue la partida");
+  assert.equal(t.round, 2);
 });
